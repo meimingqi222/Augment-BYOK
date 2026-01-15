@@ -12,7 +12,7 @@
 
 ## Phase 1：MVP（只打通最关键链路）
 
-- ConfigManager：支持 `AUGMENT_BYOK_CONFIG` + 热更新 + 失败回退旧配置
+- ConfigManager：基于 `globalState` 存储 + Save 即热更新 + 失败回退 last-good
 - Router：`endpoint -> mode`（byok|official|disabled） + `model -> byok model`（最小 mapping）
 - Endpoint：`/chat-stream`（Streaming 完整支持）
 - Provider：OpenAI / Anthropic 的 streaming（含工具调用的最小可用）

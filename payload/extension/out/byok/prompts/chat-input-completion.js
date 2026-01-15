@@ -12,7 +12,8 @@ function buildChatInputCompletionPrompt(body) {
   const system = buildSystem({
     purpose: "chat-input-completion",
     directives: { userGuidelines: "", workspaceGuidelines: "", rulesText: "" },
-    outputConstraints: "Continue the user's partial chat input. Output ONLY the completion text (do not repeat the given prompt). No quotes, no markdown."
+    outputConstraints:
+      "Continue the user's partial chat input.\n- Output ONLY the completion text (do not repeat the given prompt)\n- No quotes, no markdown\n- Do NOT wrap in ``` code fences"
   });
 
   const parts = [];
@@ -25,4 +26,3 @@ function buildChatInputCompletionPrompt(body) {
 }
 
 module.exports = { buildChatInputCompletionPrompt };
-

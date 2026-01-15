@@ -1,34 +1,40 @@
-# CONFIG：Augment-BYOK 配置与环境变量
+# CONFIG：Augment-BYOK 配置（extension globalState）
 
-## 1. 设计原则
+## 1) 设计原则
 
-- Key 只来自环境变量（避免 settings/secrets 引入不可见状态）。
-- 配置文件负责：路由规则、模型映射、上游 baseUrl、超时与行为开关。
-- 配置必须支持热更新：文件变更后对后续请求生效；错误配置不致命（保留旧配置继续跑）。
-- 默认策略：`enabled=true`；LLM 端点按 `routing.rules` 接管（建议覆盖 13 个 LLM 端点；缺 key 时 fail-closed，避免“悄悄走官方”）。
-- 非 LLM 端点默认 official；可用 `telemetry.disabled_endpoints` 顺手禁用部分遥测/上报（本地 no-op）。
+- 不使用 VS Code settings（彻底禁用 `augment.advanced.*` 的干预面）。
+- 不使用 env / 外部 YAML：配置与 Key/Token 由扩展内部持久化，并可一键导出/导入 JSON。
+- 热更新：保存后对后续请求立即生效；错误配置不致命（保留 last-good）。
+- 默认策略：`enabled=true`；仅覆盖 13 个 LLM 端点；其它端点默认 official；部分遥测端点可本地 no-op。
 
-## 2. 环境变量（建议）
+## 2) 配置存储位置
 
-- `AUGMENT_BYOK_CONFIG`：配置文件路径（默认建议 `~/.augment-byok/config.yaml`）
-- `AUGMENT_BYOK_OFFICIAL_COMPLETION_URL`：Augment 官方 completionURL（替代/覆盖 VS Code settings：`augment.advanced.completionURL`）
-- `AUGMENT_BYOK_OFFICIAL_API_TOKEN`：Augment 官方 apiToken（替代/覆盖 VS Code settings：`augment.advanced.apiToken`）
-- `OPENAI_API_KEY`：OpenAI Key（示例）
-- `ANTHROPIC_API_KEY`：Anthropic Key（示例）
+扩展使用 `globalState` 存储：
 
-可选（若需要限制本地 shim 被误用）：
-- `AUGMENT_BYOK_LOCAL_TOKEN`：本地鉴权 token（仅限你明确需要；否则建议不做，避免又引入“token 配置”复杂度）
+- 配置：`augment-byok.config.v1`
+- 运行时回滚开关：`augment-byok.runtimeEnabled.v1`
 
-## 3. 配置文件示例（YAML）
+说明：
+- 这类存储对用户更友好（无需 env / 文件路径），但 **导出 JSON 会包含敏感 Key/Token**，请谨慎分享。
+- 为避免意外把 Key/Token 同步到其它设备，默认只把 `runtimeEnabled` 加入 VS Code Sync（配置请用 Export/Import 迁移）。
 
-见：`Augment-BYOK/config.example.yaml`
+## 3) 配置样例（JSON）
 
-补充：`official.*` 只存“env 变量名 / 非敏感 URL”，敏感 token 永远放 env（不落盘）。
+见：`Augment-BYOK/config.example.json`
 
-## 4. 关键约定
+导入方式：打开面板 `BYOK: Open Config Panel` → `Import JSON` → 粘贴 → `Import & Save`。
+
+## 4) 模型与路由约定
 
 - BYOK 模型 ID 统一格式：`byok:<providerId>:<modelId>`
-- model 映射优先级（建议）：
-  1) 请求体 `model` 已是 `byok:*` → 直接使用
-  2) `routing.model_map` 中存在 → 映射到 byok
-  3) 否则使用 `routing.default_provider_id + providers[].default_model`
+- 模型选择优先级（无 `model_map`）：
+  1) 请求体 `model` 是 `byok:*` → 解析得到 provider+modelId（与 Proxy 语义一致）
+  2) 路由规则 `providerId/model` 显式指定 → 强制使用
+  3) 否则使用 `routing.defaultProviderId` + `providers[].defaultModel`
+- `/get-models` 会把 `providers[].models/defaultModel` 注入为 `byok:*`，让 Augment 的 Model Picker 可直接选择。
+
+## 5) VS Code 命令（运维入口）
+
+- `BYOK: Open Config Panel`：配置面板（Save/Reset/Export/Import/Enable/Disable）。
+- `BYOK: Reload Config`：从 `globalState` 重新加载（便于排查同步/异常）。
+- `BYOK: Disable (Rollback)`：运行时回滚到官方链路（不改配置）。

@@ -1,7 +1,8 @@
 "use strict";
 
 const { info, warn } = require("./log");
-const { ensureConfigManager, state } = require("./state");
+const { ensureConfigManager, state, CONFIG_SYNC_KEYS } = require("./state");
+const { openConfigPanel } = require("./ui/config-panel");
 
 function install({ vscode, getActivate, setActivate }) {
   if (state.installed) return;
@@ -28,12 +29,18 @@ function install({ vscode, getActivate, setActivate }) {
       if (typeof saved === "boolean") state.runtimeEnabled = saved;
     } catch {}
 
-    const cfgMgr = ensureConfigManager();
-    cfgMgr.reloadNow("activate");
-    cfgMgr.startWatching();
+    try {
+      ctx?.globalState?.setKeysForSync?.(CONFIG_SYNC_KEYS);
+    } catch {}
 
-    if (ctx && Array.isArray(ctx.subscriptions)) {
-      ctx.subscriptions.push({ dispose: () => cfgMgr.stopWatching() });
+    const cfgMgr = ensureConfigManager({ ctx });
+    const rr = cfgMgr.reloadNow("activate");
+    if (!rr.ok && rr.reason === "missing") {
+      try {
+        await cfgMgr.resetNow("init_default");
+      } catch (err) {
+        warn("bootstrap: init default config failed:", err instanceof Error ? err.message : String(err));
+      }
     }
 
     registerCommandsOnce(vscode, ctx, cfgMgr);
@@ -76,7 +83,16 @@ function registerCommandsOnce(vscode, ctx, cfgMgr) {
       await vscode.window.showInformationMessage(r.ok ? "BYOK config reloaded" : "BYOK config reload failed (kept last good)");
     } catch {}
   });
+
+  register("augment-byok.openConfigPanel", async () => {
+    try {
+      await openConfigPanel({ vscode, ctx, cfgMgr, state });
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      warn("openConfigPanel failed:", m);
+      try { await vscode.window.showErrorMessage(`Open BYOK Config Panel failed: ${m}`); } catch {}
+    }
+  });
 }
 
 module.exports = { install };
-

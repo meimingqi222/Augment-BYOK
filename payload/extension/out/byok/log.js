@@ -7,6 +7,7 @@ function redactText(v) {
   if (typeof v !== "string") return v;
   let s = v;
   s = s.replace(/\bBearer\s+[A-Za-z0-9._-]{8,}\b/gi, "Bearer ***");
+  s = s.replace(/\bace_[A-Za-z0-9]{16,}\b/g, "ace_***");
   s = s.replace(/\bsk-ant-[A-Za-z0-9_-]{16,}\b/g, "sk-ant-***");
   s = s.replace(/\bsk-[A-Za-z0-9]{16,}\b/g, "sk-***");
   return s;
@@ -42,4 +43,3 @@ function error(...args) {
 }
 
 module.exports = { debug, info, warn, error, redactText };
-

@@ -18,7 +18,8 @@ function buildPromptEnhancerPrompt(body) {
   const system = buildSystem({
     purpose: "prompt-enhancer",
     directives,
-    outputConstraints: "Rewrite the prompt to be clearer and more specific. Output ONLY the improved prompt text. No preface, no analysis."
+    outputConstraints:
+      "Rewrite the prompt to be clearer and more specific.\n- Output ONLY the improved prompt text\n- No preface, no analysis\n- Do NOT wrap in ``` code fences"
   });
 
   const history = historyToMessages(b.chat_history ?? b.chatHistory, { maxItems: 12 });
@@ -37,4 +38,3 @@ function buildPromptEnhancerPrompt(body) {
 }
 
 module.exports = { buildPromptEnhancerPrompt };
-

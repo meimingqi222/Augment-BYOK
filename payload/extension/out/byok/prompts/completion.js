@@ -13,7 +13,7 @@ function buildCompletionPrompt(body) {
   const system = buildSystem({
     purpose: "completion",
     directives: { userGuidelines: "", workspaceGuidelines: "", rulesText: "" },
-    outputConstraints: "You are a code completion engine. Output ONLY the completion text. No markdown, no explanations."
+    outputConstraints: "You are a code completion engine. Output ONLY the completion text.\n- No markdown, no explanations\n- Do NOT wrap in ``` code fences"
   });
 
   const parts = [];
@@ -27,4 +27,3 @@ function buildCompletionPrompt(body) {
 }
 
 module.exports = { buildCompletionPrompt };
-

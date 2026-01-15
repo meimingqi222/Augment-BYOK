@@ -35,13 +35,22 @@ function patchCallApiShim(filePath) {
 
   const shimPath = "./byok/shim";
 
+  const sanitizeBody =
+    `const __byok_body=arguments[3];` +
+    `if(__byok_body&&typeof __byok_body==="object"){` +
+    `try{delete __byok_body.third_party_override}catch{}` +
+    `try{delete __byok_body.thirdPartyOverride}catch{}` +
+    `}`;
+
   const apiInjection =
     `const __byok_ep=typeof arguments[2]==="string"?arguments[2]:"";` +
+    sanitizeBody +
     `const __byok_res=await require("${shimPath}").maybeHandleCallApi({requestId:arguments[0],endpoint:__byok_ep,body:arguments[3],transform:arguments[4],timeoutMs:arguments[6],abortSignal:arguments[8],upstreamBaseUrl:arguments[5],upstreamConfig:arguments[1],upstreamApiToken:(arguments[10]??((arguments[1]||{}).apiToken))});` +
     `if(__byok_res!==void 0)return __byok_res;`;
 
   const streamInjection =
     `const __byok_ep=typeof arguments[2]==="string"?arguments[2]:"";` +
+    sanitizeBody +
     `const __byok_res=await require("${shimPath}").maybeHandleCallApiStream({requestId:arguments[0],endpoint:__byok_ep,body:arguments[3],transform:arguments[4],timeoutMs:arguments[6],abortSignal:arguments[8],upstreamBaseUrl:arguments[5],upstreamConfig:arguments[1]});` +
     `if(__byok_res!==void 0)return __byok_res;`;
 

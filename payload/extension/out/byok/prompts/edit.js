@@ -14,7 +14,8 @@ function buildEditPrompt(body) {
   const system = buildSystem({
     purpose: "edit",
     directives,
-    outputConstraints: "Apply the instruction to the selected code. Output ONLY the replacement code for the selected range. No markdown, no explanations."
+    outputConstraints:
+      "Apply the instruction to the selected code.\n- Output ONLY the replacement code for the selected range\n- No markdown, no explanations\n- Do NOT wrap in ``` code fences"
   });
 
   const parts = [];
@@ -30,4 +31,3 @@ function buildEditPrompt(body) {
 }
 
 module.exports = { buildEditPrompt };
-

@@ -42,13 +42,12 @@ function decideRoute({ cfg, endpoint, body, runtimeEnabled }) {
   if (mode !== "byok") return { mode: "official", endpoint: ep, reason: "unknown_mode" };
 
   const requestedModel = pickRequestedModel(body);
-  const mapped = requestedModel && cfg?.routing?.modelMap && cfg.routing.modelMap[requestedModel] ? cfg.routing.modelMap[requestedModel] : requestedModel;
-  const parsed = parseByokModelId(mapped);
-  const providerId = normalizeString(rule?.providerId) || normalizeString(cfg?.routing?.defaultProviderId) || parsed?.providerId || "";
+  const parsed = parseByokModelId(requestedModel);
+  const providerId = normalizeString(rule?.providerId) || parsed?.providerId || normalizeString(cfg?.routing?.defaultProviderId) || "";
   const provider = pickProvider(cfg, providerId);
-  const model = normalizeString(rule?.model) || parsed?.modelId || normalizeString(provider?.defaultModel) || "";
+  const parsedModel = parsed && normalizeString(parsed.providerId) === normalizeString(provider?.id) ? parsed.modelId : "";
+  const model = normalizeString(rule?.model) || normalizeString(parsedModel) || normalizeString(provider?.defaultModel) || "";
   return { mode: "byok", endpoint: ep, reason: "byok", provider, model, requestedModel };
 }
 
 module.exports = { decideRoute, parseByokModelId, pickRequestedModel };
-

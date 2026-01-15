@@ -9,8 +9,37 @@ const { readJson, writeJson } = require("../lib/fs");
 const COMMANDS = [
   { command: "augment-byok.enable", title: "BYOK: Enable" },
   { command: "augment-byok.disable", title: "BYOK: Disable (Rollback)" },
-  { command: "augment-byok.reloadConfig", title: "BYOK: Reload Config" }
+  { command: "augment-byok.reloadConfig", title: "BYOK: Reload Config" },
+  { command: "augment-byok.openConfigPanel", title: "BYOK: Open Config Panel" }
 ];
+
+function stripAdvancedSettings(contributes) {
+  const conf = contributes && typeof contributes === "object" ? contributes.configuration : null;
+  const blocks = Array.isArray(conf) ? conf : conf && typeof conf === "object" ? [conf] : [];
+  const removed = [];
+  for (const b of blocks) {
+    const props = b && typeof b === "object" ? b.properties : null;
+    if (!props || typeof props !== "object") continue;
+    for (const k of Object.keys(props)) {
+      if (!k || typeof k !== "string") continue;
+      if (k.startsWith("augment.advanced.")) {
+        removed.push(k);
+        delete props[k];
+        continue;
+      }
+      if (k !== "augment.advanced") continue;
+      const adv = props[k];
+      const advProps = adv && typeof adv === "object" ? adv.properties : null;
+      if (!advProps || typeof advProps !== "object") continue;
+      for (const sub of ["apiToken", "completionURL", "chat", "codeEdits"]) {
+        if (!Object.prototype.hasOwnProperty.call(advProps, sub)) continue;
+        removed.push(`augment.advanced.${sub}`);
+        delete advProps[sub];
+      }
+    }
+  }
+  return removed;
+}
 
 function patchPackageJsonCommands(filePath) {
   if (!fs.existsSync(filePath)) throw new Error(`missing file: ${filePath}`);
@@ -26,8 +55,10 @@ function patchPackageJsonCommands(filePath) {
     commands.push(c);
   }
 
+  const removedSettings = stripAdvancedSettings(contributes);
+
   writeJson(filePath, pkg);
-  return { changed: true, added: COMMANDS.filter((c) => !existing.has(c.command)).map((c) => c.command) };
+  return { changed: true, added: COMMANDS.filter((c) => !existing.has(c.command)).map((c) => c.command), removedSettings };
 }
 
 module.exports = { patchPackageJsonCommands };
@@ -40,4 +71,3 @@ if (require.main === module) {
   }
   patchPackageJsonCommands(filePath);
 }
-

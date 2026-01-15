@@ -10,7 +10,7 @@ function buildConversationTitlePrompt(body) {
   const system = buildSystem({
     purpose: "generate-conversation-title",
     directives,
-    outputConstraints: "Generate a short, specific conversation title (<= 8 words). Output ONLY the title."
+    outputConstraints: "Generate a short, specific conversation title (<= 8 words). Output ONLY the title. Do NOT wrap in ``` code fences."
   });
 
   const messages = history.length ? [...history, { role: "user", content: "Generate a title for this conversation." }] : [{ role: "user", content: "Generate a title for this conversation." }];

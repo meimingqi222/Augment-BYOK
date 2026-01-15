@@ -58,13 +58,47 @@ function patchClientAuthGetters(src) {
     `try{const __byok_off=require("./byok/official").getOfficialConnection();if(__byok_off.apiToken)return __byok_off.apiToken}catch{}` +
     ``;
   const injectCompletionURL =
-    `try{const __byok_off=require("./byok/official").getOfficialConnection();if(__byok_off.completionURL)return __byok_off.completionURL}catch{}` +
+    `try{const __byok_off=require("./byok/official").getOfficialConnection();if(__byok_off.apiToken&&__byok_off.completionURL)return __byok_off.completionURL}catch{}` +
     ``;
 
   let out = src;
   out = injectOnceAfterLiteral(out, "async getAPIToken(){", injectApiToken, "clientAuth.getAPIToken");
   out = injectOnceAfterLiteral(out, "async getCompletionURL(){", injectCompletionURL, "clientAuth.getCompletionURL");
+  out = patchClientAuthSettingsFallback(out);
   return out;
+}
+
+function replaceAllOrThrow(src, re, replacement, label) {
+  const matches = Array.from(src.matchAll(re));
+  if (!matches.length) throw new Error(`patch failed: ${label} (matched=0)`);
+  return { out: src.replace(re, replacement), count: matches.length };
+}
+
+function patchClientAuthSettingsFallback(src) {
+  let out = src;
+  const tokenRes = replaceAllOrThrow(out, /return this\.configListener\.config\.apiToken/g, `return ""`, "clientAuth apiToken settings fallback");
+  out = tokenRes.out;
+  const urlRes = replaceAllOrThrow(
+    out,
+    /return this\.configListener\.config\.completionURL/g,
+    `return require("./byok/official").DEFAULT_OFFICIAL_COMPLETION_URL`,
+    "clientAuth completionURL settings fallback"
+  );
+  out = urlRes.out;
+  return out;
+}
+
+function patchConfigListenerNormalizeConfig(src) {
+  const re =
+    /apiToken:\(t\?\.\s*advanced\?\.\s*apiToken\?\?t\.apiToken\?\?"\"\)\.trim\(\)\.toUpperCase\(\),completionURL:\(t\?\.\s*advanced\?\.\s*completionURL\?\?t\.completionURL\?\?"\"\)\.trim\(\)/g;
+
+  const replacement =
+    `apiToken:(()=>{try{const __byok_conn=require("./byok/official").getOfficialConnection();return (__byok_conn.apiToken||"").trim()}catch{return""}})(),` +
+    `completionURL:(()=>{try{const __byok_off=require("./byok/official");const __byok_conn=__byok_off.getOfficialConnection();const __byok_tok=(__byok_conn.apiToken||"").trim();return __byok_tok?(__byok_conn.completionURL||__byok_off.DEFAULT_OFFICIAL_COMPLETION_URL||"https://api.augmentcode.com/").trim():""}catch{return""}})()`;
+
+  const res = replaceAllOrThrow(src, re, replacement, "configListener normalizeConfig ignore settings apiToken/completionURL");
+  if (res.count !== 1) throw new Error(`patch failed: normalizeConfig match count unexpected (${res.count})`);
+  return res.out;
 }
 
 function patchCallApiBaseUrlAndToken(src) {
@@ -74,13 +108,31 @@ function patchCallApiBaseUrlAndToken(src) {
     const apiTokenParam = params[10];
     if (!baseUrlParam || !apiTokenParam) return "";
     return (
-      `try{const __byok_off=require("./byok/official").getOfficialConnection();` +
-      `if(!${baseUrlParam}&&__byok_off.completionURL)${baseUrlParam}=__byok_off.completionURL;` +
-      `if(!${apiTokenParam}&&__byok_off.apiToken)${apiTokenParam}=__byok_off.apiToken}catch{}` +
+      `try{const __byok_off=require("./byok/official");const __byok_conn=__byok_off.getOfficialConnection();` +
+      `if(__byok_conn.apiToken){if(__byok_conn.completionURL)${baseUrlParam}=__byok_conn.completionURL;${apiTokenParam}=__byok_conn.apiToken;}` +
+      `const __byok_base=typeof ${baseUrlParam}==="string"?${baseUrlParam}:(${baseUrlParam}&&typeof ${baseUrlParam}.toString==="function"?${baseUrlParam}.toString():"");` +
+      `if(__byok_base&&(__byok_base.includes("127.0.0.1")||__byok_base.includes("0.0.0.0")||__byok_base.includes("localhost")||__byok_base.includes("[::1]")))${baseUrlParam}=__byok_off.DEFAULT_OFFICIAL_COMPLETION_URL}catch{}` +
+      `if(!${baseUrlParam})${baseUrlParam}=await this.clientAuth.getCompletionURL();` +
+      `if(!${apiTokenParam})${apiTokenParam}=await this.clientAuth.getAPIToken();` +
       ``
     );
   };
   return injectIntoAsyncMethods(src, "callApi", injection);
+}
+
+function patchCallApiStreamBaseUrl(src) {
+  const injection = (params) => {
+    if (!Array.isArray(params) || params.length < 6) return "";
+    const baseUrlParam = params[5];
+    if (!baseUrlParam) return "";
+    return (
+      `try{const __byok_off=require("./byok/official");const __byok_conn=__byok_off.getOfficialConnection();` +
+      `if(__byok_conn.apiToken&&__byok_conn.completionURL)${baseUrlParam}=__byok_conn.completionURL;` +
+      `const __byok_base=typeof ${baseUrlParam}==="string"?${baseUrlParam}:(${baseUrlParam}&&typeof ${baseUrlParam}.toString==="function"?${baseUrlParam}.toString():"");` +
+      `if(__byok_base&&(__byok_base.includes("127.0.0.1")||__byok_base.includes("0.0.0.0")||__byok_base.includes("localhost")||__byok_base.includes("[::1]")))${baseUrlParam}=__byok_off.DEFAULT_OFFICIAL_COMPLETION_URL}catch{}`
+    );
+  };
+  return injectIntoAsyncMethods(src, "callApiStream", injection);
 }
 
 function patchCallApiStreamCompletionUrlCoalesce(src) {
@@ -100,16 +152,26 @@ function patchOfficialOverrides(filePath) {
 
   let next = original;
   next = patchClientAuthGetters(next);
+  next = patchConfigListenerNormalizeConfig(next);
 
   const apiRes = patchCallApiBaseUrlAndToken(next);
   next = apiRes.out;
+
+  const streamBaseRes = patchCallApiStreamBaseUrl(next);
+  next = streamBaseRes.out;
 
   const streamRes = patchCallApiStreamCompletionUrlCoalesce(next);
   next = streamRes.out;
 
   next = ensureMarker(next, MARKER);
   fs.writeFileSync(filePath, next, "utf8");
-  return { changed: true, reason: "patched", callApiPatched: apiRes.count, callApiStreamCoalescePatched: streamRes.count };
+  return {
+    changed: true,
+    reason: "patched",
+    callApiPatched: apiRes.count,
+    callApiStreamPatched: streamBaseRes.count,
+    callApiStreamCoalescePatched: streamRes.count
+  };
 }
 
 module.exports = { patchOfficialOverrides };
@@ -122,4 +184,3 @@ if (require.main === module) {
   }
   patchOfficialOverrides(filePath);
 }
-

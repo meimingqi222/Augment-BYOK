@@ -1,6 +1,6 @@
-# ENDPOINTS：上游端点清单与功能映射（基于 0.744.0）
+# ENDPOINTS：上游端点清单与功能映射（基于 upstream-analysis.json）
 
-结论：上游 `augment.vscode-augment@0.744.0` 在扩展侧共引用 **71 个端点**，其中“可由 LLM 直接替代的数据面端点”是 **13 个**（其余多为控制面/遥测/集成能力，不能用纯 LLM 取代）。
+结论：上游 `augment/vscode-augment`（版本见 `Augment-BYOK/upstream.lock.json`）在扩展侧共引用 **71 个端点**，其中“可由 LLM 直接替代的数据面端点”是 **13 个**（其余多为控制面/遥测/集成能力，不能用纯 LLM 取代）。
 
 数据来源：
 - `Augment-BYOK/.cache/reports/upstream-analysis.json`（端点全集）
@@ -83,7 +83,7 @@
 
 ## 7) 反馈/遥测/调试（非 LLM，通常可保持 official 或按需禁用）
 
-建议默认 disabled（本地 no-op）：`/client-*`、`/record-*`、`/report-*`、`/resolve-*`（见 `Augment-BYOK/config.example.yaml` 的 `telemetry.disabled_endpoints`）。
+建议默认 disabled（本地 no-op）：`/client-*`、`/record-*`、`/report-*`、`/resolve-*`（见默认配置的 `telemetry.disabledEndpoints`，可在 `BYOK: Open Config Panel` 调整）。
 
 显式反馈：
 - `/chat-feedback`：聊天反馈。

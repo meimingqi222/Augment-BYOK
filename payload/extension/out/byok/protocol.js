@@ -91,14 +91,23 @@ function buildByokModelsFromConfig(cfg) {
   const providers = Array.isArray(cfg?.providers) ? cfg.providers : [];
   for (const p of providers) {
     const pid = normalizeString(p?.id);
+    if (!pid) continue;
+    const models = Array.isArray(p?.models) ? p.models : [];
+    for (const m of models) {
+      const mid = normalizeString(m);
+      if (mid) out.add(`byok:${pid}:${mid}`);
+    }
     const dm = normalizeString(p?.defaultModel);
-    if (pid && dm) out.add(`byok:${pid}:${dm}`);
+    if (dm) out.add(`byok:${pid}:${dm}`);
   }
-  const map = cfg?.routing?.modelMap && typeof cfg.routing.modelMap === "object" ? cfg.routing.modelMap : null;
-  if (map) {
-    for (const v of Object.values(map)) {
-      const s = normalizeString(v);
-      if (s.startsWith("byok:")) out.add(s);
+
+  const rules = cfg?.routing?.rules && typeof cfg.routing.rules === "object" ? cfg.routing.rules : null;
+  if (rules) {
+    for (const r of Object.values(rules)) {
+      if (!r || typeof r !== "object") continue;
+      const pid = normalizeString(r.providerId);
+      const mid = normalizeString(r.model);
+      if (pid && mid) out.add(`byok:${pid}:${mid}`);
     }
   }
   return Array.from(out);

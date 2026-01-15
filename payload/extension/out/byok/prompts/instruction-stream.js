@@ -1,7 +1,7 @@
 "use strict";
 
 const { normalizeString } = require("../util");
-const { fmtSection, fmtCodeSection, extractDirectives, buildSystem, extractCodeContext } = require("./common");
+const { fmtSection, fmtCodeSection, historyToMessages, extractDirectives, buildSystem, extractCodeContext } = require("./common");
 
 function buildInstructionStreamPrompt(body) {
   const b = body && typeof body === "object" ? body : {};
@@ -14,8 +14,11 @@ function buildInstructionStreamPrompt(body) {
   const system = buildSystem({
     purpose: "instruction-stream",
     directives,
-    outputConstraints: "Output ONLY the final replacement code. No markdown, no explanations. Stream text as plain code."
+    outputConstraints:
+      "Output ONLY the final replacement code for the selected range.\n- No markdown, no explanations\n- Do NOT wrap in ``` code fences\n- Stream plain code text only"
   });
+
+  const history = historyToMessages(b.chat_history ?? b.chatHistory, { maxItems: 10 });
 
   const parts = [];
   if (instruction) parts.push(fmtSection("Instruction", instruction));
@@ -26,8 +29,7 @@ function buildInstructionStreamPrompt(body) {
   if (suffix) parts.push(fmtCodeSection("Suffix", suffix, { lang }));
 
   const user = parts.filter(Boolean).join("\n\n").trim() || "Generate replacement code.";
-  return { system, messages: [{ role: "user", content: user }] };
+  return { system, messages: [...history, { role: "user", content: user }] };
 }
 
 module.exports = { buildInstructionStreamPrompt };
-

@@ -18,18 +18,18 @@
 - 安装 VSIX → 重载窗口 → 正常登录/使用 Augment（确保“原生不坏”是默认态）
 
 ### BYOK 开启（最小闭环）
-- 设置 env：
-  - `OPENAI_API_KEY=...` 或 `ANTHROPIC_API_KEY=...`
-  - `AUGMENT_BYOK_CONFIG=.../config.yaml`
-- 在配置里把 `/chat-stream` 设为 `byok`
+- 打开 `BYOK: Open Config Panel`：
+  - 配置 `official.completionUrl` + `official.apiToken`
+  - 配置 `providers[].apiKey`（OpenAI / Anthropic）
+  - 确认 `/chat-stream` 设为 `byok`
 - 打开聊天 → 验证：
   - 流式输出连续、无卡死
   - 中断/取消生效（Abort）
 
 ### 热更新
-- 修改 config（例如切换默认 provider/model 或把某端点设为 disabled）
+- 在面板里修改配置并 Save（例如切换默认 provider/model 或把某端点设为 disabled）
 - 不重启 VS Code，发起下一次请求验证新规则生效
-- 配置写错时（YAML 无法解析/字段缺失）：
+- 配置写错时（字段类型错误/JSON import 无法解析）：
   - 不崩溃
   - 继续使用旧配置
   - 有明确日志/提示
@@ -42,4 +42,3 @@
 - Key 缺失：应给出稳定、可解释错误（不要让 Augment UI 卡死/无限重试）
 - 上游 401/429/5xx：错误信息应包含 provider + endpoint + requestId（且不泄露 key）
 - 超时：明确区分 “上游超时” vs “用户取消”
-

@@ -56,7 +56,7 @@ Augment UI/逻辑
 
 ## 3. 模块划分（运行时）
 
-- `ConfigManager`：读取 `AUGMENT_BYOK_CONFIG` 指向的配置文件；watch + debounce；解析失败保留旧配置。
+- `ConfigManager`：读取 extension `globalState` 的配置；保存即热更新；失败保留 last-good。
 - `Router`：输入 `(endpoint, requestBody, selectedModel, config)` 输出 `(mode, provider, model)`。
 - `AugmentProtocol`：解析 Augment 请求（尤其 `/chat-stream`），输出 canonical request；把 provider stream 转回 Augment NDJSON。
 - `Providers`

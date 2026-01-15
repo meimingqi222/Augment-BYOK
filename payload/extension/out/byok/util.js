@@ -22,6 +22,12 @@ function normalizeEndpoint(endpoint) {
   return p;
 }
 
+function isEnvVarName(v) {
+  const s = normalizeString(v);
+  if (!s) return false;
+  return /^[A-Z_][A-Z0-9_]*$/.test(s);
+}
+
 function safeTransform(transform, raw, label) {
   if (typeof transform !== "function") return raw;
   try {
@@ -47,5 +53,4 @@ function randomId() {
   return `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-module.exports = { normalizeString, normalizeEndpoint, safeTransform, emptyAsyncGenerator, randomId };
-
+module.exports = { normalizeString, normalizeEndpoint, isEnvVarName, safeTransform, emptyAsyncGenerator, randomId };

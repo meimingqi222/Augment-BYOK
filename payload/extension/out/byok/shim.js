@@ -22,12 +22,11 @@ const {
   makeModelInfo
 } = require("./protocol");
 
-function getEnvKeyOrThrow(envName, label) {
-  const k = normalizeString(envName);
-  if (!k) throw new Error(`${label} api_key_env 未配置`);
-  const v = normalizeString(process.env[k]);
-  if (!v) throw new Error(`${label} 环境变量未设置: ${k}`);
-  return v;
+function resolveProviderApiKey(provider, label) {
+  if (!provider || typeof provider !== "object") throw new Error(`${label} provider 无效`);
+  const key = normalizeString(provider.apiKey);
+  if (key) return key;
+  throw new Error(`${label} 未配置 api_key`);
 }
 
 function isTelemetryDisabled(cfg, ep) {
@@ -35,11 +34,44 @@ function isTelemetryDisabled(cfg, ep) {
   return list.includes(ep);
 }
 
+function normalizeLineNumber(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return 0;
+  return Math.floor(n);
+}
+
+function pickNextEditLocationCandidates(body) {
+  const b = body && typeof body === "object" ? body : {};
+  const max =
+    Number.isFinite(Number(b.num_results)) && Number(b.num_results) > 0 ? Math.min(6, Math.floor(Number(b.num_results))) : 1;
+
+  const out = [];
+  const diags = Array.isArray(b.diagnostics) ? b.diagnostics : [];
+  for (const d of diags) {
+    const path = normalizeString(d?.path || d?.file_path || d?.filePath || d?.item?.path);
+    if (!path) continue;
+    const r = d?.range || d?.item?.range || d?.location?.range;
+    const start = normalizeLineNumber(r?.start?.line ?? r?.start_line ?? r?.startLine ?? r?.start);
+    if (start === null) continue;
+    const stop = normalizeLineNumber(r?.end?.line ?? r?.stop?.line ?? r?.end_line ?? r?.stopLine ?? r?.stop ?? start) ?? start;
+    out.push({ item: { path, range: { start, stop: Math.max(start, stop) } }, score: 1, debug_info: { source: "diagnostic" } });
+    if (out.length >= max) break;
+  }
+
+  if (!out.length) {
+    const path = normalizeString(b.path);
+    if (path) out.push({ item: { path, range: { start: 0, stop: 0 } }, score: 1, debug_info: { source: "fallback" } });
+  }
+
+  return out;
+}
+
 async function byokCompleteText({ provider, model, system, messages, timeoutMs, abortSignal }) {
   if (!provider || typeof provider !== "object") throw new Error("BYOK provider 未选择");
   const type = normalizeString(provider.type);
   const baseUrl = normalizeString(provider.baseUrl);
-  const apiKey = getEnvKeyOrThrow(provider.apiKeyEnv, `Provider(${provider.id || type})`);
+  const apiKey = resolveProviderApiKey(provider, `Provider(${provider.id || type})`);
   const extraHeaders = provider.headers && typeof provider.headers === "object" ? provider.headers : {};
   const requestDefaults = provider.requestDefaults && typeof provider.requestDefaults === "object" ? provider.requestDefaults : {};
 
@@ -59,7 +91,7 @@ async function* byokStreamText({ provider, model, system, messages, timeoutMs, a
   if (!provider || typeof provider !== "object") throw new Error("BYOK provider 未选择");
   const type = normalizeString(provider.type);
   const baseUrl = normalizeString(provider.baseUrl);
-  const apiKey = getEnvKeyOrThrow(provider.apiKeyEnv, `Provider(${provider.id || type})`);
+  const apiKey = resolveProviderApiKey(provider, `Provider(${provider.id || type})`);
   const extraHeaders = provider.headers && typeof provider.headers === "object" ? provider.headers : {};
   const requestDefaults = provider.requestDefaults && typeof provider.requestDefaults === "object" ? provider.requestDefaults : {};
 
@@ -130,7 +162,7 @@ async function maybeHandleCallApi({ requestId, endpoint, body, transform, timeou
     const byokModels = buildByokModelsFromConfig(cfg);
     try {
       const off = getOfficialConnection();
-      const completionURL = (upstreamConfig && typeof upstreamConfig === "object" ? normalizeString(upstreamConfig.completionURL) : "") || off.completionURL;
+      const completionURL = off.completionURL;
       const apiToken = normalizeString(upstreamApiToken) || off.apiToken;
       const upstream = await fetchOfficialGetModels({ completionURL, apiToken, timeoutMs: Math.min(12000, t), abortSignal });
       const merged = mergeModels(upstream, byokModels);
@@ -162,7 +194,9 @@ async function maybeHandleCallApi({ requestId, endpoint, body, transform, timeou
   }
 
   if (ep === "/next_edit_loc") {
-    return safeTransform(transform, makeBackNextEditLocationEmpty(), ep);
+    const candidate_locations = pickNextEditLocationCandidates(body);
+    const raw = { candidate_locations, unknown_blob_names: [], checkpoint_not_found: false, critical_errors: [] };
+    return safeTransform(transform, raw, ep);
   }
 
   return undefined;

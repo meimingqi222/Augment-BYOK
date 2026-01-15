@@ -22,7 +22,6 @@
 
 ## 4) 运行时约定（与 Augment 注入环境兼容）
 
-- 不依赖 VS Code settings/secrets（Key 只从 env）。
+- 不依赖 VS Code settings（避免 settings 干预）；配置与 Key/Token 存在 extension `globalState`（可导入/导出 JSON）。
 - 不依赖 Node 原生模块的“高风险面”（例如 `child_process`）；仅用 `fetch` + 基础工具函数。
 - 所有日志必须脱敏（永不输出 key/token 全文）。
-

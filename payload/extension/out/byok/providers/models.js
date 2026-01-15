@@ -1,0 +1,100 @@
+"use strict";
+
+const { normalizeString } = require("../util");
+const { joinBaseUrl, safeFetch, readTextLimit } = require("./http");
+
+function requireString(v, label) {
+  const s = normalizeString(v);
+  if (!s) throw new Error(`${label} 未配置`);
+  return s;
+}
+
+function uniqKeepOrder(xs) {
+  const out = [];
+  const seen = new Set();
+  for (const it of Array.isArray(xs) ? xs : []) {
+    const s = normalizeString(it);
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+function parseModelIds(json) {
+  if (!json || typeof json !== "object") return [];
+
+  const data = Array.isArray(json.data) ? json.data : null;
+  if (data) return uniqKeepOrder(data.map((m) => m?.id ?? m?.name ?? m?.model ?? ""));
+
+  const models = Array.isArray(json.models) ? json.models : null;
+  if (models) return uniqKeepOrder(models.map((m) => (typeof m === "string" ? m : m?.id ?? m?.name ?? m?.model ?? "")));
+
+  const list = Array.isArray(json.model_ids) ? json.model_ids : Array.isArray(json.modelIds) ? json.modelIds : null;
+  if (list) return uniqKeepOrder(list);
+
+  return [];
+}
+
+async function fetchModelsWithFallback({ urls, headers, timeoutMs, abortSignal, label }) {
+  const tried = [];
+  for (const url of uniqKeepOrder(urls)) {
+    tried.push(url);
+    const resp = await safeFetch(url, { method: "GET", headers }, { timeoutMs, abortSignal, label });
+    if (!resp.ok) {
+      const text = await readTextLimit(resp, 300);
+      if (resp.status === 404) continue;
+      throw new Error(`${label} ${resp.status}: ${text}`.trim());
+    }
+    const json = await resp.json().catch(() => null);
+    const models = parseModelIds(json);
+    if (models.length) return models;
+    throw new Error(`${label} 响应未包含可解析的 models 列表`);
+  }
+  throw new Error(`${label} 失败（404 或无可用结果），tried=${tried.length}`);
+}
+
+async function fetchOpenAiCompatibleModels({ baseUrl, apiKey, extraHeaders, timeoutMs, abortSignal }) {
+  const b = requireString(baseUrl, "OpenAI baseUrl");
+  const key = requireString(apiKey, "OpenAI apiKey");
+  const urls = [joinBaseUrl(b, "models")];
+  if (!b.includes("/v1")) urls.push(joinBaseUrl(b, "v1/models"));
+
+  return await fetchModelsWithFallback({
+    urls,
+    headers: { ...(extraHeaders || {}), authorization: `Bearer ${key}` },
+    timeoutMs,
+    abortSignal,
+    label: "OpenAI(models)"
+  });
+}
+
+async function fetchAnthropicModels({ baseUrl, apiKey, extraHeaders, timeoutMs, abortSignal }) {
+  const b = requireString(baseUrl, "Anthropic baseUrl");
+  const key = requireString(apiKey, "Anthropic apiKey");
+  const urls = [joinBaseUrl(b, "models")];
+  if (!b.includes("/v1")) urls.push(joinBaseUrl(b, "v1/models"));
+
+  return await fetchModelsWithFallback({
+    urls,
+    headers: { ...(extraHeaders || {}), authorization: `Bearer ${key}`, "x-api-key": key, "anthropic-version": "2023-06-01" },
+    timeoutMs,
+    abortSignal,
+    label: "Anthropic(models)"
+  });
+}
+
+async function fetchProviderModels({ provider, timeoutMs, abortSignal }) {
+  if (!provider || typeof provider !== "object") throw new Error("provider 无效");
+  const type = normalizeString(provider.type);
+  const baseUrl = normalizeString(provider.baseUrl);
+  const apiKey = normalizeString(provider.apiKey);
+  const extraHeaders = provider.headers && typeof provider.headers === "object" ? provider.headers : {};
+
+  const t = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0 ? Number(timeoutMs) : 15000;
+  if (type === "openai_compatible") return await fetchOpenAiCompatibleModels({ baseUrl, apiKey, extraHeaders, timeoutMs: t, abortSignal });
+  if (type === "anthropic") return await fetchAnthropicModels({ baseUrl, apiKey, extraHeaders, timeoutMs: t, abortSignal });
+  throw new Error(`未知 provider.type: ${type}`);
+}
+
+module.exports = { fetchProviderModels };
