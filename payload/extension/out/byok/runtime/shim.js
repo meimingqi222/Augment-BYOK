@@ -1,32 +1,63 @@
 "use strict";
 
-const { info, warn } = require("./log");
-const { ensureConfigManager, state } = require("./state");
-const { decideRoute } = require("./router");
-const { normalizeEndpoint, normalizeString, safeTransform, emptyAsyncGenerator } = require("./util");
-const { openAiCompleteText, openAiStreamTextDeltas } = require("./providers/openai");
-const { anthropicCompleteText, anthropicStreamTextDeltas } = require("./providers/anthropic");
-const { joinBaseUrl, safeFetch, readTextLimit } = require("./providers/http");
-const { getOfficialConnection } = require("./official");
+const { warn } = require("../infra/log");
+const { ensureConfigManager, state } = require("../config/state");
+const { decideRoute } = require("../core/router");
+const { normalizeEndpoint, normalizeString, safeTransform, emptyAsyncGenerator } = require("../infra/util");
+const { ensureModelRegistryFeatureFlags } = require("../core/model-registry");
+const { openAiCompleteText, openAiStreamTextDeltas } = require("../providers/openai");
+const { anthropicCompleteText, anthropicStreamTextDeltas } = require("../providers/anthropic");
+const { joinBaseUrl, safeFetch, readTextLimit } = require("../providers/http");
+const { getOfficialConnection } = require("../config/official");
 const {
   buildMessagesForEndpoint,
+  makeBackTextResult,
   makeBackChatResult,
   makeBackCompletionResult,
-  makeBackCodeEditResult,
-  makeBackChatInstructionChunk,
   makeBackGenerateCommitMessageChunk,
   makeBackNextEditGenerationChunk,
-  makeBackNextEditLocationEmpty,
+  makeBackNextEditLocationResult,
   buildByokModelsFromConfig,
   makeBackGetModelsResult,
   makeModelInfo
-} = require("./protocol");
+} = require("../core/protocol");
 
 function resolveProviderApiKey(provider, label) {
   if (!provider || typeof provider !== "object") throw new Error(`${label} provider 无效`);
   const key = normalizeString(provider.apiKey);
   if (key) return key;
   throw new Error(`${label} 未配置 api_key`);
+}
+
+function providerLabel(provider) {
+  const id = normalizeString(provider?.id);
+  const type = normalizeString(provider?.type);
+  return `Provider(${id || type || "unknown"})`;
+}
+
+function providerRequestContext(provider) {
+  if (!provider || typeof provider !== "object") throw new Error("BYOK provider 未选择");
+  const type = normalizeString(provider.type);
+  const baseUrl = normalizeString(provider.baseUrl);
+  const apiKey = resolveProviderApiKey(provider, providerLabel(provider));
+  const extraHeaders = provider.headers && typeof provider.headers === "object" ? provider.headers : {};
+  const requestDefaults = provider.requestDefaults && typeof provider.requestDefaults === "object" ? provider.requestDefaults : {};
+  return { type, baseUrl, apiKey, extraHeaders, requestDefaults };
+}
+
+function asOpenAiMessages(system, messages) {
+  const sys = typeof system === "string" ? system : "";
+  const ms = Array.isArray(messages) ? messages : [];
+  return [{ role: "system", content: sys }, ...ms].filter((m) => m && typeof m.content === "string" && m.content);
+}
+
+function asAnthropicMessages(system, messages) {
+  const sys = normalizeString(system);
+  const ms = Array.isArray(messages) ? messages : [];
+  const out = ms
+    .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content)
+    .map((m) => ({ role: m.role, content: m.content }));
+  return { system: sys, messages: out };
 }
 
 function isTelemetryDisabled(cfg, ep) {
@@ -68,41 +99,45 @@ function pickNextEditLocationCandidates(body) {
 }
 
 async function byokCompleteText({ provider, model, system, messages, timeoutMs, abortSignal }) {
-  if (!provider || typeof provider !== "object") throw new Error("BYOK provider 未选择");
-  const type = normalizeString(provider.type);
-  const baseUrl = normalizeString(provider.baseUrl);
-  const apiKey = resolveProviderApiKey(provider, `Provider(${provider.id || type})`);
-  const extraHeaders = provider.headers && typeof provider.headers === "object" ? provider.headers : {};
-  const requestDefaults = provider.requestDefaults && typeof provider.requestDefaults === "object" ? provider.requestDefaults : {};
+  const { type, baseUrl, apiKey, extraHeaders, requestDefaults } = providerRequestContext(provider);
 
   if (type === "openai_compatible") {
-    const msgs = [{ role: "system", content: system }, ...(messages || [])].filter((m) => m && typeof m.content === "string" && m.content);
-    return await openAiCompleteText({ baseUrl, apiKey, model, messages: msgs, timeoutMs, abortSignal, extraHeaders, requestDefaults });
+    return await openAiCompleteText({
+      baseUrl,
+      apiKey,
+      model,
+      messages: asOpenAiMessages(system, messages),
+      timeoutMs,
+      abortSignal,
+      extraHeaders,
+      requestDefaults
+    });
   }
   if (type === "anthropic") {
-    const sys = normalizeString(system);
-    const msgs = (messages || []).filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content).map((m) => ({ role: m.role, content: m.content }));
+    const { system: sys, messages: msgs } = asAnthropicMessages(system, messages);
     return await anthropicCompleteText({ baseUrl, apiKey, model, system: sys, messages: msgs, timeoutMs, abortSignal, extraHeaders, requestDefaults });
   }
   throw new Error(`未知 provider.type: ${type}`);
 }
 
 async function* byokStreamText({ provider, model, system, messages, timeoutMs, abortSignal }) {
-  if (!provider || typeof provider !== "object") throw new Error("BYOK provider 未选择");
-  const type = normalizeString(provider.type);
-  const baseUrl = normalizeString(provider.baseUrl);
-  const apiKey = resolveProviderApiKey(provider, `Provider(${provider.id || type})`);
-  const extraHeaders = provider.headers && typeof provider.headers === "object" ? provider.headers : {};
-  const requestDefaults = provider.requestDefaults && typeof provider.requestDefaults === "object" ? provider.requestDefaults : {};
+  const { type, baseUrl, apiKey, extraHeaders, requestDefaults } = providerRequestContext(provider);
 
   if (type === "openai_compatible") {
-    const msgs = [{ role: "system", content: system }, ...(messages || [])].filter((m) => m && typeof m.content === "string" && m.content);
-    yield* openAiStreamTextDeltas({ baseUrl, apiKey, model, messages: msgs, timeoutMs, abortSignal, extraHeaders, requestDefaults });
+    yield* openAiStreamTextDeltas({
+      baseUrl,
+      apiKey,
+      model,
+      messages: asOpenAiMessages(system, messages),
+      timeoutMs,
+      abortSignal,
+      extraHeaders,
+      requestDefaults
+    });
     return;
   }
   if (type === "anthropic") {
-    const sys = normalizeString(system);
-    const msgs = (messages || []).filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content).map((m) => ({ role: m.role, content: m.content }));
+    const { system: sys, messages: msgs } = asAnthropicMessages(system, messages);
     yield* anthropicStreamTextDeltas({ baseUrl, apiKey, model, system: sys, messages: msgs, timeoutMs, abortSignal, extraHeaders, requestDefaults });
     return;
   }
@@ -131,10 +166,12 @@ function mergeModels(upstreamJson, byokModelNames) {
     existing.add(name);
   }
   const defaultModel = typeof base.default_model === "string" && base.default_model ? base.default_model : (models[0]?.name || "unknown");
-  return { ...base, default_model: defaultModel, models };
+  const baseFlags = base.feature_flags && typeof base.feature_flags === "object" && !Array.isArray(base.feature_flags) ? base.feature_flags : {};
+  const flags = ensureModelRegistryFeatureFlags(baseFlags, { byokModelIds: byokModelNames, defaultModel });
+  return { ...base, default_model: defaultModel, models, feature_flags: flags };
 }
 
-async function maybeHandleCallApi({ requestId, endpoint, body, transform, timeoutMs, abortSignal, upstreamConfig, upstreamApiToken }) {
+async function maybeHandleCallApi({ endpoint, body, transform, timeoutMs, abortSignal, upstreamApiToken }) {
   const ep = normalizeEndpoint(endpoint);
   if (!ep) return undefined;
 
@@ -183,7 +220,7 @@ async function maybeHandleCallApi({ requestId, endpoint, body, transform, timeou
   if (ep === "/edit") {
     const { system, messages } = buildMessagesForEndpoint(ep, body);
     const text = await byokCompleteText({ provider: route.provider, model: route.model, system, messages, timeoutMs: t, abortSignal });
-    return safeTransform(transform, makeBackCodeEditResult(text), ep);
+    return safeTransform(transform, makeBackTextResult(text), ep);
   }
 
   if (ep === "/chat") {
@@ -195,14 +232,13 @@ async function maybeHandleCallApi({ requestId, endpoint, body, transform, timeou
 
   if (ep === "/next_edit_loc") {
     const candidate_locations = pickNextEditLocationCandidates(body);
-    const raw = { candidate_locations, unknown_blob_names: [], checkpoint_not_found: false, critical_errors: [] };
-    return safeTransform(transform, raw, ep);
+    return safeTransform(transform, makeBackNextEditLocationResult(candidate_locations), ep);
   }
 
   return undefined;
 }
 
-async function maybeHandleCallApiStream({ requestId, endpoint, body, transform, timeoutMs, abortSignal }) {
+async function maybeHandleCallApiStream({ endpoint, body, transform, timeoutMs, abortSignal }) {
   const ep = normalizeEndpoint(endpoint);
   if (!ep) return undefined;
 
@@ -237,7 +273,7 @@ async function maybeHandleCallApiStream({ requestId, endpoint, body, transform, 
     const { system, messages } = buildMessagesForEndpoint(ep, body);
     const src = byokStreamText({ provider: route.provider, model: route.model, system, messages, timeoutMs: t, abortSignal });
     return (async function* () {
-      for await (const delta of src) yield safeTransform(transform, makeBackChatInstructionChunk(delta), ep);
+      for await (const delta of src) yield safeTransform(transform, makeBackTextResult(delta), ep);
     })();
   }
 

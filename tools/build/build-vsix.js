@@ -69,7 +69,7 @@ async function main() {
   console.log(`[build] patch entry bootstrap`);
   patchExtensionEntry(extJsPath);
 
-  console.log(`[build] patch official (completionURL/apiToken from env/config)`);
+  console.log(`[build] patch official (completionURL/apiToken from globalState config)`);
   patchOfficialOverrides(extJsPath);
 
   console.log(`[build] patch callApi/callApiStream shim`);
@@ -80,6 +80,21 @@ async function main() {
 
   console.log(`[build] sanity check (node --check out/extension.js)`);
   run("node", ["--check", extJsPath], { cwd: repoRoot });
+
+  console.log(`[build] contract checks`);
+  run(
+    "node",
+    [
+      path.join(repoRoot, "tools", "check", "byok-contracts.js"),
+      "--extensionDir",
+      extensionDir,
+      "--extJs",
+      extJsPath,
+      "--pkg",
+      pkgPath
+    ],
+    { cwd: repoRoot }
+  );
 
   const outName = `augment.vscode-augment.${upstreamVersion}.byok.vsix`;
   const outPath = path.join(distDir, outName);

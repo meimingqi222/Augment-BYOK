@@ -1,15 +1,6 @@
 "use strict";
 
-const { normalizeEndpoint, normalizeString } = require("./util");
-
-function parseByokModelId(model) {
-  const raw = normalizeString(model);
-  if (!raw.startsWith("byok:")) return null;
-  const rest = raw.slice("byok:".length);
-  const idx = rest.indexOf(":");
-  if (idx <= 0 || idx >= rest.length - 1) throw new Error(`BYOK model 格式错误: ${raw}`);
-  return { providerId: rest.slice(0, idx), modelId: rest.slice(idx + 1) };
-}
+const { normalizeEndpoint, normalizeString, parseByokModelId } = require("../infra/util");
 
 function pickRequestedModel(body) {
   if (!body || typeof body !== "object") return "";
@@ -42,7 +33,7 @@ function decideRoute({ cfg, endpoint, body, runtimeEnabled }) {
   if (mode !== "byok") return { mode: "official", endpoint: ep, reason: "unknown_mode" };
 
   const requestedModel = pickRequestedModel(body);
-  const parsed = parseByokModelId(requestedModel);
+  const parsed = parseByokModelId(requestedModel, { strict: true });
   const providerId = normalizeString(rule?.providerId) || parsed?.providerId || normalizeString(cfg?.routing?.defaultProviderId) || "";
   const provider = pickProvider(cfg, providerId);
   const parsedModel = parsed && normalizeString(parsed.providerId) === normalizeString(provider?.id) ? parsed.modelId : "";
@@ -50,4 +41,4 @@ function decideRoute({ cfg, endpoint, body, runtimeEnabled }) {
   return { mode: "byok", endpoint: ep, reason: "byok", provider, model, requestedModel };
 }
 
-module.exports = { decideRoute, parseByokModelId, pickRequestedModel };
+module.exports = { decideRoute };

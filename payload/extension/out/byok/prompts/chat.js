@@ -1,6 +1,6 @@
 "use strict";
 
-const { normalizeString } = require("../util");
+const { normalizeString } = require("../infra/util");
 const {
   fmtSection,
   fmtCodeSection,
@@ -49,4 +49,3 @@ function buildChatPrompt(endpoint, body) {
 }
 
 module.exports = { buildChatPrompt };
-

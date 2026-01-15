@@ -33,7 +33,7 @@ function patchCallApiShim(filePath) {
   const original = fs.readFileSync(filePath, "utf8");
   if (original.includes(MARKER)) return { changed: false, reason: "already_patched" };
 
-  const shimPath = "./byok/shim";
+  const shimPath = "./byok/runtime/shim";
 
   const sanitizeBody =
     `const __byok_body=arguments[3];` +
@@ -45,13 +45,13 @@ function patchCallApiShim(filePath) {
   const apiInjection =
     `const __byok_ep=typeof arguments[2]==="string"?arguments[2]:"";` +
     sanitizeBody +
-    `const __byok_res=await require("${shimPath}").maybeHandleCallApi({requestId:arguments[0],endpoint:__byok_ep,body:arguments[3],transform:arguments[4],timeoutMs:arguments[6],abortSignal:arguments[8],upstreamBaseUrl:arguments[5],upstreamConfig:arguments[1],upstreamApiToken:(arguments[10]??((arguments[1]||{}).apiToken))});` +
+    `const __byok_res=await require("${shimPath}").maybeHandleCallApi({endpoint:__byok_ep,body:arguments[3],transform:arguments[4],timeoutMs:arguments[6],abortSignal:arguments[8],upstreamApiToken:(arguments[10]??((arguments[1]||{}).apiToken))});` +
     `if(__byok_res!==void 0)return __byok_res;`;
 
   const streamInjection =
     `const __byok_ep=typeof arguments[2]==="string"?arguments[2]:"";` +
     sanitizeBody +
-    `const __byok_res=await require("${shimPath}").maybeHandleCallApiStream({requestId:arguments[0],endpoint:__byok_ep,body:arguments[3],transform:arguments[4],timeoutMs:arguments[6],abortSignal:arguments[8],upstreamBaseUrl:arguments[5],upstreamConfig:arguments[1]});` +
+    `const __byok_res=await require("${shimPath}").maybeHandleCallApiStream({endpoint:__byok_ep,body:arguments[3],transform:arguments[4],timeoutMs:arguments[6],abortSignal:arguments[8]});` +
     `if(__byok_res!==void 0)return __byok_res;`;
 
   let next = original;

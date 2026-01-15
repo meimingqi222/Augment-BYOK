@@ -1,6 +1,6 @@
 "use strict";
 
-const { normalizeString } = require("../util");
+const { normalizeString } = require("../infra/util");
 
 function truncate(text, maxChars) {
   const s = String(text ?? "");
@@ -128,4 +128,3 @@ module.exports = {
   buildSystem,
   extractCodeContext
 };
-

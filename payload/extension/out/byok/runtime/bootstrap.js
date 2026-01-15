@@ -1,8 +1,8 @@
 "use strict";
 
-const { info, warn } = require("./log");
-const { ensureConfigManager, state, CONFIG_SYNC_KEYS } = require("./state");
-const { openConfigPanel } = require("./ui/config-panel");
+const { info, warn } = require("../infra/log");
+const { ensureConfigManager, state, setRuntimeEnabled, CONFIG_SYNC_KEYS, RUNTIME_ENABLED_KEY } = require("../config/state");
+const { openConfigPanel } = require("../ui/config-panel");
 
 function install({ vscode, getActivate, setActivate }) {
   if (state.installed) return;
@@ -25,7 +25,7 @@ function install({ vscode, getActivate, setActivate }) {
     state.extensionContext = ctx || null;
 
     try {
-      const saved = ctx?.globalState?.get?.(state.runtimeEnabledKey);
+      const saved = ctx?.globalState?.get?.(RUNTIME_ENABLED_KEY);
       if (typeof saved === "boolean") state.runtimeEnabled = saved;
     } catch {}
 
@@ -64,15 +64,13 @@ function registerCommandsOnce(vscode, ctx, cfgMgr) {
   };
 
   register("augment-byok.enable", async () => {
-    state.runtimeEnabled = true;
-    try { await ctx?.globalState?.update?.(state.runtimeEnabledKey, true); } catch {}
+    await setRuntimeEnabled(ctx, true);
     info("BYOK enabled (runtime)");
     try { await vscode.window.showInformationMessage("BYOK enabled"); } catch {}
   });
 
   register("augment-byok.disable", async () => {
-    state.runtimeEnabled = false;
-    try { await ctx?.globalState?.update?.(state.runtimeEnabledKey, false); } catch {}
+    await setRuntimeEnabled(ctx, false);
     info("BYOK disabled (rollback)");
     try { await vscode.window.showWarningMessage("BYOK disabled (rollback to official)"); } catch {}
   });

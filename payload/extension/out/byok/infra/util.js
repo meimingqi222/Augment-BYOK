@@ -6,6 +6,12 @@ function normalizeString(v) {
   return s ? s : "";
 }
 
+function requireString(v, label) {
+  const s = normalizeString(v);
+  if (!s) throw new Error(`${label} 未配置`);
+  return s;
+}
+
 function normalizeEndpoint(endpoint) {
   const raw = normalizeString(endpoint);
   if (!raw) return "";
@@ -22,10 +28,23 @@ function normalizeEndpoint(endpoint) {
   return p;
 }
 
-function isEnvVarName(v) {
-  const s = normalizeString(v);
-  if (!s) return false;
-  return /^[A-Z_][A-Z0-9_]*$/.test(s);
+function parseByokModelId(modelId, opts) {
+  const raw = normalizeString(modelId);
+  if (!raw.startsWith("byok:")) return null;
+  const strict = opts && typeof opts === "object" ? Boolean(opts.strict) : false;
+  const rest = raw.slice("byok:".length);
+  const idx = rest.indexOf(":");
+  if (idx <= 0 || idx >= rest.length - 1) {
+    if (strict) throw new Error(`BYOK model 格式错误: ${raw}`);
+    return null;
+  }
+  const providerId = normalizeString(rest.slice(0, idx));
+  const innerModelId = normalizeString(rest.slice(idx + 1));
+  if (!providerId || !innerModelId) {
+    if (strict) throw new Error(`BYOK model 格式错误: ${raw}`);
+    return null;
+  }
+  return { providerId, modelId: innerModelId };
 }
 
 function safeTransform(transform, raw, label) {
@@ -53,4 +72,4 @@ function randomId() {
   return `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-module.exports = { normalizeString, normalizeEndpoint, isEnvVarName, safeTransform, emptyAsyncGenerator, randomId };
+module.exports = { normalizeString, requireString, normalizeEndpoint, parseByokModelId, safeTransform, emptyAsyncGenerator, randomId };

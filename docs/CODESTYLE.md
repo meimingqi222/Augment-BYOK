@@ -16,9 +16,11 @@
 
 ## 3) TypeScript 约定
 
-- 优先 `type` + 纯函数；避免无边界 class。
-- 关键结构（config、canonical request、router decision、stream event）必须有类型。
-- 对外边界统一做 `unknown -> normalize`，内部不允许 `any` 扩散。
+本项目运行时代码为 **CommonJS JavaScript**（`payload/extension/out/byok/*`），不引入 TS 编译链；依然用“类型边界”思路约束复杂度：
+
+- 关键结构用“显式字段约定 + normalize/validate”固定形状（config、router decision、provider request、stream event）。
+- 输入边界统一做 `unknown -> normalize`，内部避免隐式 `any` 扩散（宁可显式抛错/回退 official）。
+- 避免无边界 class：优先纯函数 + 小模块；需要状态时集中到 `state/config` 单点管理。
 
 ## 4) 运行时约定（与 Augment 注入环境兼容）
 

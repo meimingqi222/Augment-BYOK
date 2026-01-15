@@ -41,13 +41,13 @@ Augment UI/逻辑
 ### 2.3 运行时入口（Bootstrap）
 
 在上游 `out/extension.js` 最小插入一行 bootstrap：
-- 加载 `./byok/bootstrap`（新注入文件）
+- 加载 `./byok/runtime/bootstrap`（新注入文件）
 - 注册/初始化 shim（配置加载、热更新、命令、一键回滚开关）
 
 ### 2.4 路由注入点（callApi / callApiStream）
 
 在 `callApi`/`callApiStream` 方法体开头注入：
-- `const res = await require("./byok/shim").maybeHandleCallApi*(...)`
+- `const res = await require("./byok/runtime/shim").maybeHandleCallApi*(...)`
 - `if (res !== undefined) return res;`
 
 优势：
@@ -58,6 +58,7 @@ Augment UI/逻辑
 
 - `ConfigManager`：读取 extension `globalState` 的配置；保存即热更新；失败保留 last-good。
 - `Router`：输入 `(endpoint, requestBody, selectedModel, config)` 输出 `(mode, provider, model)`。
+- `ModelRegistry`：`/get-models` 必须注入 `enableModelRegistry/modelRegistry/modelInfoRegistry` 等 feature_flags，否则主面板 Model Picker 入口会被隐藏。
 - `AugmentProtocol`：解析 Augment 请求（尤其 `/chat-stream`），输出 canonical request；把 provider stream 转回 Augment NDJSON。
 - `Providers`
   - `OpenAICompatible`：`/chat/completions` streaming（SSE）

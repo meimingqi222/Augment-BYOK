@@ -21,7 +21,7 @@ function patchExtensionEntry(filePath) {
 
   const activateVar = findActivateVar(original);
   const injection =
-    `\n;require("./byok/bootstrap").install({vscode:require("vscode"),getActivate:()=>${activateVar},setActivate:e=>{${activateVar}=e}})\n` +
+    `\n;require("./byok/runtime/bootstrap").install({vscode:require("vscode"),getActivate:()=>${activateVar},setActivate:e=>{${activateVar}=e}})\n` +
     `;/*${MARKER}*/\n`;
   const next = insertBeforeSourceMappingURL(original, injection);
   fs.writeFileSync(filePath, next, "utf8");

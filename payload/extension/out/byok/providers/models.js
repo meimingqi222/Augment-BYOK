@@ -1,13 +1,8 @@
 "use strict";
 
-const { normalizeString } = require("../util");
+const { normalizeString, requireString } = require("../infra/util");
 const { joinBaseUrl, safeFetch, readTextLimit } = require("./http");
-
-function requireString(v, label) {
-  const s = normalizeString(v);
-  if (!s) throw new Error(`${label} 未配置`);
-  return s;
-}
+const { openAiAuthHeaders, anthropicAuthHeaders } = require("./headers");
 
 function uniqKeepOrder(xs) {
   const out = [];
@@ -62,7 +57,7 @@ async function fetchOpenAiCompatibleModels({ baseUrl, apiKey, extraHeaders, time
 
   return await fetchModelsWithFallback({
     urls,
-    headers: { ...(extraHeaders || {}), authorization: `Bearer ${key}` },
+    headers: openAiAuthHeaders(key, extraHeaders),
     timeoutMs,
     abortSignal,
     label: "OpenAI(models)"
@@ -77,7 +72,7 @@ async function fetchAnthropicModels({ baseUrl, apiKey, extraHeaders, timeoutMs, 
 
   return await fetchModelsWithFallback({
     urls,
-    headers: { ...(extraHeaders || {}), authorization: `Bearer ${key}`, "x-api-key": key, "anthropic-version": "2023-06-01" },
+    headers: anthropicAuthHeaders(key, extraHeaders, { forceBearer: true }),
     timeoutMs,
     abortSignal,
     label: "Anthropic(models)"

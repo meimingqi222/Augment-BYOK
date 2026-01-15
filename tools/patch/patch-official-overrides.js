@@ -8,14 +8,6 @@ const { ensureMarker } = require("../lib/patch");
 
 const MARKER = "__augment_byok_official_overrides_patched_v1";
 
-function findMatchIndexes(src, re, label) {
-  const matches = Array.from(src.matchAll(re));
-  if (matches.length === 0) throw new Error(`${label} needle not found (upstream may have changed): matched=0`);
-  const indexes = matches.map((m) => m.index).filter((i) => typeof i === "number" && i >= 0);
-  if (indexes.length !== matches.length) throw new Error(`${label} needle match missing index`);
-  return indexes.sort((a, b) => a - b);
-}
-
 function parseParamNames(paramsRaw) {
   const raw = String(paramsRaw || "");
   return raw
@@ -55,10 +47,10 @@ function injectOnceAfterLiteral(src, needle, injection, label) {
 
 function patchClientAuthGetters(src) {
   const injectApiToken =
-    `try{const __byok_off=require("./byok/official").getOfficialConnection();if(__byok_off.apiToken)return __byok_off.apiToken}catch{}` +
+    `try{const __byok_off=require("./byok/config/official").getOfficialConnection();if(__byok_off.apiToken)return __byok_off.apiToken}catch{}` +
     ``;
   const injectCompletionURL =
-    `try{const __byok_off=require("./byok/official").getOfficialConnection();if(__byok_off.apiToken&&__byok_off.completionURL)return __byok_off.completionURL}catch{}` +
+    `try{const __byok_off=require("./byok/config/official").getOfficialConnection();if(__byok_off.apiToken&&__byok_off.completionURL)return __byok_off.completionURL}catch{}` +
     ``;
 
   let out = src;
@@ -81,7 +73,7 @@ function patchClientAuthSettingsFallback(src) {
   const urlRes = replaceAllOrThrow(
     out,
     /return this\.configListener\.config\.completionURL/g,
-    `return require("./byok/official").DEFAULT_OFFICIAL_COMPLETION_URL`,
+    `return require("./byok/config/official").DEFAULT_OFFICIAL_COMPLETION_URL`,
     "clientAuth completionURL settings fallback"
   );
   out = urlRes.out;
@@ -93,8 +85,8 @@ function patchConfigListenerNormalizeConfig(src) {
     /apiToken:\(t\?\.\s*advanced\?\.\s*apiToken\?\?t\.apiToken\?\?"\"\)\.trim\(\)\.toUpperCase\(\),completionURL:\(t\?\.\s*advanced\?\.\s*completionURL\?\?t\.completionURL\?\?"\"\)\.trim\(\)/g;
 
   const replacement =
-    `apiToken:(()=>{try{const __byok_conn=require("./byok/official").getOfficialConnection();return (__byok_conn.apiToken||"").trim()}catch{return""}})(),` +
-    `completionURL:(()=>{try{const __byok_off=require("./byok/official");const __byok_conn=__byok_off.getOfficialConnection();const __byok_tok=(__byok_conn.apiToken||"").trim();return __byok_tok?(__byok_conn.completionURL||__byok_off.DEFAULT_OFFICIAL_COMPLETION_URL||"https://api.augmentcode.com/").trim():""}catch{return""}})()`;
+    `apiToken:(()=>{try{const __byok_conn=require("./byok/config/official").getOfficialConnection();return (__byok_conn.apiToken||"").trim()}catch{return""}})(),` +
+    `completionURL:(()=>{try{const __byok_off=require("./byok/config/official");const __byok_conn=__byok_off.getOfficialConnection();const __byok_tok=(__byok_conn.apiToken||"").trim();return __byok_tok?(__byok_conn.completionURL||__byok_off.DEFAULT_OFFICIAL_COMPLETION_URL||"https://api.augmentcode.com/").trim():""}catch{return""}})()`;
 
   const res = replaceAllOrThrow(src, re, replacement, "configListener normalizeConfig ignore settings apiToken/completionURL");
   if (res.count !== 1) throw new Error(`patch failed: normalizeConfig match count unexpected (${res.count})`);
@@ -108,7 +100,7 @@ function patchCallApiBaseUrlAndToken(src) {
     const apiTokenParam = params[10];
     if (!baseUrlParam || !apiTokenParam) return "";
     return (
-      `try{const __byok_off=require("./byok/official");const __byok_conn=__byok_off.getOfficialConnection();` +
+      `try{const __byok_off=require("./byok/config/official");const __byok_conn=__byok_off.getOfficialConnection();` +
       `if(__byok_conn.apiToken){if(__byok_conn.completionURL)${baseUrlParam}=__byok_conn.completionURL;${apiTokenParam}=__byok_conn.apiToken;}` +
       `const __byok_base=typeof ${baseUrlParam}==="string"?${baseUrlParam}:(${baseUrlParam}&&typeof ${baseUrlParam}.toString==="function"?${baseUrlParam}.toString():"");` +
       `if(__byok_base&&(__byok_base.includes("127.0.0.1")||__byok_base.includes("0.0.0.0")||__byok_base.includes("localhost")||__byok_base.includes("[::1]")))${baseUrlParam}=__byok_off.DEFAULT_OFFICIAL_COMPLETION_URL}catch{}` +
@@ -126,7 +118,7 @@ function patchCallApiStreamBaseUrl(src) {
     const baseUrlParam = params[5];
     if (!baseUrlParam) return "";
     return (
-      `try{const __byok_off=require("./byok/official");const __byok_conn=__byok_off.getOfficialConnection();` +
+      `try{const __byok_off=require("./byok/config/official");const __byok_conn=__byok_off.getOfficialConnection();` +
       `if(__byok_conn.apiToken&&__byok_conn.completionURL)${baseUrlParam}=__byok_conn.completionURL;` +
       `const __byok_base=typeof ${baseUrlParam}==="string"?${baseUrlParam}:(${baseUrlParam}&&typeof ${baseUrlParam}.toString==="function"?${baseUrlParam}.toString():"");` +
       `if(__byok_base&&(__byok_base.includes("127.0.0.1")||__byok_base.includes("0.0.0.0")||__byok_base.includes("localhost")||__byok_base.includes("[::1]")))${baseUrlParam}=__byok_off.DEFAULT_OFFICIAL_COMPLETION_URL}catch{}`

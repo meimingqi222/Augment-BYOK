@@ -1,7 +1,7 @@
 "use strict";
 
 const { ensureConfigManager } = require("./state");
-const { normalizeString } = require("./util");
+const { normalizeString } = require("../infra/util");
 
 const DEFAULT_OFFICIAL_COMPLETION_URL = "https://api.augmentcode.com/";
 

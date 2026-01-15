@@ -1,6 +1,6 @@
 "use strict";
 
-const { normalizeString } = require("../util");
+const { normalizeString } = require("../infra/util");
 
 function createAbortError(message) {
   const DomExceptionCtor = globalThis.DOMException;
@@ -79,4 +79,3 @@ async function safeFetch(url, init, { timeoutMs, abortSignal, label } = {}) {
 }
 
 module.exports = { createAbortError, buildAbortSignal, joinBaseUrl, safeFetch, readTextLimit };
-

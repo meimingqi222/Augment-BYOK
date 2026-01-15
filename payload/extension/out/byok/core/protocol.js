@@ -1,16 +1,17 @@
 "use strict";
 
-const { normalizeString, randomId } = require("./util");
-const { buildChatPrompt } = require("./prompts/chat");
-const { buildPromptEnhancerPrompt } = require("./prompts/prompt-enhancer");
-const { buildCompletionPrompt } = require("./prompts/completion");
-const { buildChatInputCompletionPrompt } = require("./prompts/chat-input-completion");
-const { buildEditPrompt } = require("./prompts/edit");
-const { buildInstructionStreamPrompt } = require("./prompts/instruction-stream");
-const { buildSmartPasteStreamPrompt } = require("./prompts/smart-paste-stream");
-const { buildCommitMessageStreamPrompt } = require("./prompts/commit-message-stream");
-const { buildConversationTitlePrompt } = require("./prompts/conversation-title");
-const { buildNextEditStreamPrompt } = require("./prompts/next-edit-stream");
+const { normalizeString, randomId } = require("../infra/util");
+const { ensureModelRegistryFeatureFlags } = require("./model-registry");
+const { buildChatPrompt } = require("../prompts/chat");
+const { buildPromptEnhancerPrompt } = require("../prompts/prompt-enhancer");
+const { buildCompletionPrompt } = require("../prompts/completion");
+const { buildChatInputCompletionPrompt } = require("../prompts/chat-input-completion");
+const { buildEditPrompt } = require("../prompts/edit");
+const { buildInstructionStreamPrompt } = require("../prompts/instruction-stream");
+const { buildSmartPasteStreamPrompt } = require("../prompts/smart-paste-stream");
+const { buildCommitMessageStreamPrompt } = require("../prompts/commit-message-stream");
+const { buildConversationTitlePrompt } = require("../prompts/conversation-title");
+const { buildNextEditStreamPrompt } = require("../prompts/next-edit-stream");
 
 function buildMessagesForEndpoint(endpoint, body) {
   const ep = normalizeString(endpoint);
@@ -23,13 +24,20 @@ function buildMessagesForEndpoint(endpoint, body) {
   if (ep === "/generate-conversation-title") return buildConversationTitlePrompt(body);
   if (ep === "/next-edit-stream") return buildNextEditStreamPrompt(body);
   if (ep === "/prompt-enhancer") return buildPromptEnhancerPrompt(body);
-  if (ep === "/chat" || ep === "/chat-stream") return buildChatPrompt(ep, body);
   return buildChatPrompt(ep, body);
+}
+
+function coerceText(text) {
+  return typeof text === "string" ? text : String(text ?? "");
+}
+
+function makeBackTextResult(text, extra) {
+  return { text: coerceText(text), unknown_blob_names: [], checkpoint_not_found: false, ...(extra && typeof extra === "object" ? extra : null) };
 }
 
 function makeBackChatResult(text, { nodes, includeNodes = true } = {}) {
   const out = {
-    text: typeof text === "string" ? text : String(text ?? ""),
+    text: coerceText(text),
     unknown_blob_names: [],
     checkpoint_not_found: false,
     workspace_file_chunks: []
@@ -39,21 +47,13 @@ function makeBackChatResult(text, { nodes, includeNodes = true } = {}) {
 }
 
 function makeBackCompletionResult(text, { timeoutMs } = {}) {
-  const out = { text: typeof text === "string" ? text : String(text ?? ""), unknown_blob_names: [], checkpoint_not_found: false };
+  const out = makeBackTextResult(text);
   if (Number.isFinite(Number(timeoutMs))) out.completion_timeout_ms = Number(timeoutMs);
   return out;
 }
 
-function makeBackCodeEditResult(text) {
-  return { text: typeof text === "string" ? text : String(text ?? ""), unknown_blob_names: [], checkpoint_not_found: false };
-}
-
-function makeBackChatInstructionChunk(text) {
-  return { text: typeof text === "string" ? text : String(text ?? ""), unknown_blob_names: [], checkpoint_not_found: false };
-}
-
 function makeBackGenerateCommitMessageChunk(text) {
-  return { text: typeof text === "string" ? text : String(text ?? "") };
+  return { text: coerceText(text) };
 }
 
 function makeBackNextEditGenerationChunk({ path, blobName, charStart, charEnd, existingCode, suggestedCode }) {
@@ -82,8 +82,13 @@ function makeBackNextEditGenerationChunk({ path, blobName, charStart, charEnd, e
   };
 }
 
-function makeBackNextEditLocationEmpty() {
-  return { candidate_locations: [], unknown_blob_names: [], checkpoint_not_found: false, critical_errors: [] };
+function makeBackNextEditLocationResult(candidate_locations) {
+  return {
+    candidate_locations: Array.isArray(candidate_locations) ? candidate_locations : [],
+    unknown_blob_names: [],
+    checkpoint_not_found: false,
+    critical_errors: []
+  };
 }
 
 function buildByokModelsFromConfig(cfg) {
@@ -116,7 +121,12 @@ function buildByokModelsFromConfig(cfg) {
 function makeBackGetModelsResult({ defaultModel, models }) {
   const dm = normalizeString(defaultModel) || (Array.isArray(models) && models.length ? models[0].name : "unknown");
   const ms = Array.isArray(models) ? models : [];
-  return { default_model: dm, models: ms, feature_flags: {} };
+  const byokIds = ms.map((m) => normalizeString(m?.name)).filter(Boolean);
+  return {
+    default_model: dm,
+    models: ms,
+    feature_flags: ensureModelRegistryFeatureFlags({}, { byokModelIds: byokIds, defaultModel: dm })
+  };
 }
 
 function makeModelInfo(name) {
@@ -125,13 +135,12 @@ function makeModelInfo(name) {
 
 module.exports = {
   buildMessagesForEndpoint,
+  makeBackTextResult,
   makeBackChatResult,
   makeBackCompletionResult,
-  makeBackCodeEditResult,
-  makeBackChatInstructionChunk,
   makeBackGenerateCommitMessageChunk,
   makeBackNextEditGenerationChunk,
-  makeBackNextEditLocationEmpty,
+  makeBackNextEditLocationResult,
   buildByokModelsFromConfig,
   makeBackGetModelsResult,
   makeModelInfo

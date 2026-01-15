@@ -1,6 +1,6 @@
 "use strict";
 
-const { normalizeString } = require("../util");
+const { normalizeString } = require("../infra/util");
 const { fmtSection, fmtCodeSection, extractDirectives, buildSystem, extractCodeContext } = require("./common");
 
 function buildEditPrompt(body) {

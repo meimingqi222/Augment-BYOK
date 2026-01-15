@@ -1,8 +1,9 @@
 "use strict";
 
-const { info, warn } = require("../log");
-const { normalizeString } = require("../util");
-const { defaultConfig, normalizeConfig } = require("../config");
+const { info, warn } = require("../infra/log");
+const { normalizeString } = require("../infra/util");
+const { defaultConfig } = require("../config/config");
+const { setRuntimeEnabled: setRuntimeEnabledPersisted } = require("../config/state");
 const { fetchProviderModels } = require("../providers/models");
 const { renderConfigPanelHtml } = require("./config-panel.html");
 
@@ -30,13 +31,6 @@ function summarizeRuntime({ cfgMgr, state }) {
   };
 }
 
-async function setRuntimeEnabled({ enabled, ctx, state }) {
-  state.runtimeEnabled = Boolean(enabled);
-  try {
-    await ctx?.globalState?.update?.(state.runtimeEnabledKey, Boolean(enabled));
-  } catch {}
-}
-
 function post(panel, msg) {
   try {
     panel.webview.postMessage(msg);
@@ -62,13 +56,13 @@ function createHandlers({ vscode, ctx, cfgMgr, state, panel }) {
       postRender(panel, cfgMgr, state);
     },
     disableRuntime: async () => {
-      await setRuntimeEnabled({ enabled: false, ctx, state });
+      await setRuntimeEnabledPersisted(ctx, false);
       info("BYOK disabled (rollback) via panel");
       postStatus(panel, "Runtime disabled (rollback to official).");
       postRender(panel, cfgMgr, state);
     },
     enableRuntime: async () => {
-      await setRuntimeEnabled({ enabled: true, ctx, state });
+      await setRuntimeEnabledPersisted(ctx, true);
       info("BYOK enabled via panel");
       postStatus(panel, "Runtime enabled.");
       postRender(panel, cfgMgr, state);
@@ -87,8 +81,7 @@ function createHandlers({ vscode, ctx, cfgMgr, state, panel }) {
     save: async (msg) => {
       const raw = msg && typeof msg === "object" ? msg.config : null;
       try {
-        const cfg = normalizeConfig(raw);
-        await cfgMgr.saveNow(cfg, "panel_save");
+        await cfgMgr.saveNow(raw, "panel_save");
         postStatus(panel, "Saved (OK).");
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);

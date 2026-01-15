@@ -31,7 +31,7 @@
   1) 请求体 `model` 是 `byok:*` → 解析得到 provider+modelId（与 Proxy 语义一致）
   2) 路由规则 `providerId/model` 显式指定 → 强制使用
   3) 否则使用 `routing.defaultProviderId` + `providers[].defaultModel`
-- `/get-models` 会把 `providers[].models/defaultModel` 注入为 `byok:*`，让 Augment 的 Model Picker 可直接选择。
+- `/get-models` 会把 `providers[].models/defaultModel` 注入为 `byok:*`，让 Augment 的 Model Picker 可直接选择；同时必须返回 `feature_flags.enableModelRegistry/modelRegistry/modelInfoRegistry` 等字段，否则主面板模型选择入口会被隐藏。
 
 ## 5) VS Code 命令（运维入口）
 

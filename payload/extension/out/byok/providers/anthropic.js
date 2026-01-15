@@ -2,13 +2,8 @@
 
 const { joinBaseUrl, safeFetch, readTextLimit } = require("./http");
 const { parseSse } = require("./sse");
-const { normalizeString } = require("../util");
-
-function requireString(v, label) {
-  const s = normalizeString(v);
-  if (!s) throw new Error(`${label} 未配置`);
-  return s;
-}
+const { normalizeString, requireString } = require("../infra/util");
+const { withJsonContentType, anthropicAuthHeaders } = require("./headers");
 
 function pickMaxTokens(requestDefaults) {
   const v = requestDefaults && typeof requestDefaults === "object" ? requestDefaults.max_tokens ?? requestDefaults.maxTokens : undefined;
@@ -16,7 +11,7 @@ function pickMaxTokens(requestDefaults) {
   return Number.isFinite(n) && n > 0 ? n : 1024;
 }
 
-async function anthropicCompleteText({ baseUrl, apiKey, model, system, messages, timeoutMs, abortSignal, extraHeaders, requestDefaults }) {
+function buildAnthropicRequest({ baseUrl, apiKey, model, system, messages, extraHeaders, requestDefaults, stream }) {
   const url = joinBaseUrl(requireString(baseUrl, "Anthropic baseUrl"), "messages");
   const key = requireString(apiKey, "Anthropic apiKey");
   const m = requireString(model, "Anthropic model");
@@ -27,20 +22,21 @@ async function anthropicCompleteText({ baseUrl, apiKey, model, system, messages,
     model: m,
     max_tokens: pickMaxTokens(requestDefaults),
     messages,
-    stream: false
+    stream: Boolean(stream)
   };
   if (typeof system === "string" && system.trim()) body.system = system.trim();
+  const headers = withJsonContentType(anthropicAuthHeaders(key, extraHeaders));
+  return { url, headers, body };
+}
+
+async function anthropicCompleteText({ baseUrl, apiKey, model, system, messages, timeoutMs, abortSignal, extraHeaders, requestDefaults }) {
+  const { url, headers, body } = buildAnthropicRequest({ baseUrl, apiKey, model, system, messages, extraHeaders, requestDefaults, stream: false });
 
   const resp = await safeFetch(
     url,
     {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(extraHeaders || {}),
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01"
-      },
+      headers,
       body: JSON.stringify(body)
     },
     { timeoutMs, abortSignal, label: "Anthropic" }
@@ -55,30 +51,13 @@ async function anthropicCompleteText({ baseUrl, apiKey, model, system, messages,
 }
 
 async function* anthropicStreamTextDeltas({ baseUrl, apiKey, model, system, messages, timeoutMs, abortSignal, extraHeaders, requestDefaults }) {
-  const url = joinBaseUrl(requireString(baseUrl, "Anthropic baseUrl"), "messages");
-  const key = requireString(apiKey, "Anthropic apiKey");
-  const m = requireString(model, "Anthropic model");
-  if (!Array.isArray(messages) || !messages.length) throw new Error("Anthropic messages 为空");
-
-  const body = {
-    ...(requestDefaults && typeof requestDefaults === "object" ? requestDefaults : null),
-    model: m,
-    max_tokens: pickMaxTokens(requestDefaults),
-    messages,
-    stream: true
-  };
-  if (typeof system === "string" && system.trim()) body.system = system.trim();
+  const { url, headers, body } = buildAnthropicRequest({ baseUrl, apiKey, model, system, messages, extraHeaders, requestDefaults, stream: true });
 
   const resp = await safeFetch(
     url,
     {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(extraHeaders || {}),
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01"
-      },
+      headers,
       body: JSON.stringify(body)
     },
     { timeoutMs, abortSignal, label: "Anthropic(stream)" }
@@ -99,4 +78,3 @@ async function* anthropicStreamTextDeltas({ baseUrl, apiKey, model, system, mess
 }
 
 module.exports = { anthropicCompleteText, anthropicStreamTextDeltas };
-

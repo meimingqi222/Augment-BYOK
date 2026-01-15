@@ -1,0 +1,159 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+
+function fail(msg) {
+  console.error(`[contracts] ERROR: ${String(msg || "unknown error")}`);
+  process.exit(1);
+}
+
+function ok(msg) {
+  console.log(`[contracts] ${String(msg || "")}`);
+}
+
+function assert(cond, msg) {
+  if (!cond) fail(msg);
+}
+
+function readText(filePath) {
+  return fs.readFileSync(filePath, "utf8");
+}
+
+function readJson(filePath) {
+  const txt = readText(filePath);
+  return JSON.parse(txt);
+}
+
+function parseArgs(argv) {
+  const out = {};
+  for (let i = 2; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a || typeof a !== "string" || !a.startsWith("--")) continue;
+    const k = a.slice(2);
+    const next = argv[i + 1];
+    const v = next && typeof next === "string" && !next.startsWith("--") ? next : "1";
+    if (v !== "1") i += 1;
+    out[k] = v;
+  }
+  return out;
+}
+
+function assertFileExists(root, rel) {
+  const p = path.join(root, rel);
+  assert(fs.existsSync(p), `missing file: ${rel}`);
+  return p;
+}
+
+function assertContains(src, needle, label) {
+  assert(src.includes(needle), `missing needle (${label || "unknown"}): ${JSON.stringify(needle)}`);
+}
+
+function assertHasCommand(pkg, cmd) {
+  const commands = Array.isArray(pkg?.contributes?.commands) ? pkg.contributes.commands : [];
+  const okCmd = commands.some((c) => c && typeof c.command === "string" && c.command === cmd);
+  assert(okCmd, `package.json missing command: ${cmd}`);
+}
+
+function assertModelRegistryFlags(flags) {
+  assert(flags && typeof flags === "object" && !Array.isArray(flags), "feature_flags not object");
+  assert(flags.enableModelRegistry === true || flags.enable_model_registry === true, "enableModelRegistry missing/false");
+  assert(typeof flags.modelRegistry === "string" || typeof flags.model_registry === "string", "modelRegistry missing");
+  assert(typeof flags.modelInfoRegistry === "string" || typeof flags.model_info_registry === "string", "modelInfoRegistry missing");
+  assert(typeof flags.agentChatModel === "string" || typeof flags.agent_chat_model === "string", "agentChatModel missing");
+}
+
+function main() {
+  const args = parseArgs(process.argv);
+  const extensionDir = path.resolve(String(args.extensionDir || ""));
+  const extJsPath = path.resolve(String(args.extJs || ""));
+  const pkgPath = path.resolve(String(args.pkg || ""));
+
+  assert(extensionDir && extensionDir !== path.parse(extensionDir).root, "missing --extensionDir");
+  assert(extJsPath && extJsPath !== path.parse(extJsPath).root, "missing --extJs");
+  assert(pkgPath && pkgPath !== path.parse(pkgPath).root, "missing --pkg");
+
+  ok(`extensionDir=${extensionDir}`);
+
+  assert(fs.existsSync(extensionDir), `extensionDir not found: ${extensionDir}`);
+  assert(fs.existsSync(extJsPath), `extJs not found: ${extJsPath}`);
+  assert(fs.existsSync(pkgPath), `package.json not found: ${pkgPath}`);
+
+  const requiredRelFiles = [
+    "out/byok/runtime/bootstrap.js",
+    "out/byok/runtime/shim.js",
+    "out/byok/config/config.js",
+    "out/byok/config/state.js",
+    "out/byok/config/official.js",
+    "out/byok/core/router.js",
+    "out/byok/core/protocol.js",
+    "out/byok/core/model-registry.js",
+    "out/byok/infra/util.js",
+    "out/byok/infra/log.js",
+    "out/byok/ui/config-panel.js",
+    "out/byok/ui/config-panel.html.js",
+    "out/byok/ui/config-panel.webview.js",
+    "out/byok/ui/config-panel.webview.render.js"
+  ];
+  for (const rel of requiredRelFiles) assertFileExists(extensionDir, rel);
+  ok(`required files ok (${requiredRelFiles.length})`);
+
+  const pkg = readJson(pkgPath);
+  assertHasCommand(pkg, "augment-byok.enable");
+  assertHasCommand(pkg, "augment-byok.disable");
+  assertHasCommand(pkg, "augment-byok.reloadConfig");
+  assertHasCommand(pkg, "augment-byok.openConfigPanel");
+  ok("package.json commands ok");
+
+  const extJs = readText(extJsPath);
+  assertContains(extJs, "__augment_byok_augment_interceptor_injected_v1", "augment interceptor injected");
+  assertContains(extJs, "__augment_byok_bootstrap_injected_v1", "bootstrap injected");
+  assertContains(extJs, "__augment_byok_official_overrides_patched_v1", "official overrides patched");
+  assertContains(extJs, "__augment_byok_callapi_shim_patched_v1", "callApi shim patched");
+  assert(!extJs.includes("case \"/autoAuth\"") && !extJs.includes("handleAutoAuth"), "autoAuth guard failed (post-check)");
+  ok("extension.js markers ok");
+
+  const byokDir = path.join(extensionDir, "out", "byok");
+  const coreDir = path.join(byokDir, "core");
+  const configDir = path.join(byokDir, "config");
+  const infraDir = path.join(byokDir, "infra");
+  const modelRegistry = require(path.join(coreDir, "model-registry.js"));
+  const protocol = require(path.join(coreDir, "protocol.js"));
+  const config = require(path.join(configDir, "config.js"));
+  const router = require(path.join(coreDir, "router.js"));
+  const util = require(path.join(infraDir, "util.js"));
+
+  const sampleByokId = "byok:openai:gpt-4o-mini";
+  const flags = modelRegistry.ensureModelRegistryFeatureFlags({}, { byokModelIds: [sampleByokId], defaultModel: sampleByokId });
+  assertModelRegistryFlags(flags);
+  const regJson = JSON.parse(flags.modelRegistry || flags.model_registry || "{}");
+  assert(regJson["openai: gpt-4o-mini"] === sampleByokId, "modelRegistry missing mapping: openai: gpt-4o-mini");
+  ok("model registry flags ok");
+
+  const getModels = protocol.makeBackGetModelsResult({ defaultModel: sampleByokId, models: [protocol.makeModelInfo(sampleByokId)] });
+  assert(getModels && typeof getModels === "object", "makeBackGetModelsResult not object");
+  assertModelRegistryFlags(getModels.feature_flags);
+  ok("makeBackGetModelsResult contract ok");
+
+  const cfg = config.defaultConfig();
+  const r = router.decideRoute({ cfg, endpoint: "/chat-stream", body: { model: sampleByokId }, runtimeEnabled: true });
+  assert(r && r.mode === "byok", "router.decideRoute expected mode=byok");
+  assert(r.provider && r.provider.id === "openai", "router.decideRoute expected provider=openai");
+  assert(r.model === "gpt-4o-mini", "router.decideRoute expected model=gpt-4o-mini");
+  ok("router decideRoute contract ok");
+
+  assert(util.parseByokModelId(sampleByokId)?.providerId === "openai", "util.parseByokModelId parse failed");
+  let threw = false;
+  try {
+    util.parseByokModelId("byok:badformat", { strict: true });
+  } catch {
+    threw = true;
+  }
+  assert(threw, "util.parseByokModelId(strict) should throw on invalid byok format");
+  ok("util parseByokModelId contract ok");
+
+  ok("ALL CONTRACTS OK");
+}
+
+main();

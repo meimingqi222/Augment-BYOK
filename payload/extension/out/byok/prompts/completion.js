@@ -1,6 +1,6 @@
 "use strict";
 
-const { normalizeString } = require("../util");
+const { normalizeString } = require("../infra/util");
 const { fmtSection, fmtCodeSection, buildSystem } = require("./common");
 
 function buildCompletionPrompt(body) {

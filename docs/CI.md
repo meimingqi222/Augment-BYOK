@@ -14,6 +14,7 @@
 判定规则（fail-fast）：
 - patch needle 找不到 → build 直接失败（避免 silent break）。
 - `autoAuth` 字符串命中 → build 直接失败（强制“彻底禁用”）。
+- BYOK 合约检查失败 → build 直接失败（例如：缺少 `out/byok/*` 必要文件、缺少注入 marker、或 `/get-models` 未包含 `enableModelRegistry/modelRegistry` 等关键字段）。
 - LLM 端点集合发生变化（新增/消失/调用类型变化）→ CI 直接标红（必须人工确认并更新 allowlist）。
 
 ## 2) 自动发布策略

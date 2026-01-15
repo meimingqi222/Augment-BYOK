@@ -3,16 +3,23 @@
 const { createConfigManager } = require("./config");
 
 const RUNTIME_ENABLED_KEY = "augment-byok.runtimeEnabled.v1";
-const CONFIG_SYNC_KEYS = ["augment-byok.runtimeEnabled.v1"];
+const CONFIG_SYNC_KEYS = [RUNTIME_ENABLED_KEY];
 
 const state = {
   installed: false,
   vscode: null,
   extensionContext: null,
   runtimeEnabled: true,
-  configManager: null,
-  runtimeEnabledKey: RUNTIME_ENABLED_KEY
+  configManager: null
 };
+
+async function setRuntimeEnabled(ctx, enabled) {
+  state.runtimeEnabled = Boolean(enabled);
+  try {
+    await ctx?.globalState?.update?.(RUNTIME_ENABLED_KEY, state.runtimeEnabled);
+  } catch {}
+  return state.runtimeEnabled;
+}
 
 function ensureConfigManager(opts) {
   if (!state.configManager) state.configManager = createConfigManager();
@@ -21,4 +28,4 @@ function ensureConfigManager(opts) {
   return state.configManager;
 }
 
-module.exports = { state, ensureConfigManager, CONFIG_SYNC_KEYS };
+module.exports = { state, setRuntimeEnabled, ensureConfigManager, CONFIG_SYNC_KEYS, RUNTIME_ENABLED_KEY };

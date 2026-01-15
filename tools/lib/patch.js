@@ -11,12 +11,4 @@ function insertBeforeSourceMappingURL(src, injection) {
   return src.slice(0, idx) + injection + src.slice(idx);
 }
 
-function replaceOnceLiteral(src, needle, replacement, label) {
-  const idx = src.indexOf(needle);
-  if (idx < 0) throw new Error(`needle not found: ${label}`);
-  if (src.indexOf(needle, idx + needle.length) >= 0) throw new Error(`needle not unique: ${label}`);
-  return src.slice(0, idx) + replacement + src.slice(idx + needle.length);
-}
-
-module.exports = { ensureMarker, insertBeforeSourceMappingURL, replaceOnceLiteral };
-
+module.exports = { ensureMarker, insertBeforeSourceMappingURL };

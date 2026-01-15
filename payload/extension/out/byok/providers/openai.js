@@ -2,26 +2,26 @@
 
 const { joinBaseUrl, safeFetch, readTextLimit } = require("./http");
 const { parseSse } = require("./sse");
-const { normalizeString } = require("../util");
+const { normalizeString, requireString } = require("../infra/util");
+const { withJsonContentType, openAiAuthHeaders } = require("./headers");
 
-function requireString(v, label) {
-  const s = normalizeString(v);
-  if (!s) throw new Error(`${label} 未配置`);
-  return s;
-}
-
-async function openAiCompleteText({ baseUrl, apiKey, model, messages, timeoutMs, abortSignal, extraHeaders, requestDefaults }) {
+function buildOpenAiRequest({ baseUrl, apiKey, model, messages, extraHeaders, requestDefaults, stream }) {
   const url = joinBaseUrl(requireString(baseUrl, "OpenAI baseUrl"), "chat/completions");
   const key = requireString(apiKey, "OpenAI apiKey");
   const m = requireString(model, "OpenAI model");
   if (!Array.isArray(messages) || !messages.length) throw new Error("OpenAI messages 为空");
+  const body = { ...(requestDefaults && typeof requestDefaults === "object" ? requestDefaults : null), model: m, messages, stream: Boolean(stream) };
+  const headers = withJsonContentType(openAiAuthHeaders(key, extraHeaders));
+  return { url, headers, body };
+}
 
-  const body = { ...(requestDefaults && typeof requestDefaults === "object" ? requestDefaults : null), model: m, messages, stream: false };
+async function openAiCompleteText({ baseUrl, apiKey, model, messages, timeoutMs, abortSignal, extraHeaders, requestDefaults }) {
+  const { url, headers, body } = buildOpenAiRequest({ baseUrl, apiKey, model, messages, extraHeaders, requestDefaults, stream: false });
   const resp = await safeFetch(
     url,
     {
       method: "POST",
-      headers: { "content-type": "application/json", ...(extraHeaders || {}), authorization: `Bearer ${key}` },
+      headers,
       body: JSON.stringify(body)
     },
     { timeoutMs, abortSignal, label: "OpenAI" }
@@ -35,17 +35,12 @@ async function openAiCompleteText({ baseUrl, apiKey, model, messages, timeoutMs,
 }
 
 async function* openAiStreamTextDeltas({ baseUrl, apiKey, model, messages, timeoutMs, abortSignal, extraHeaders, requestDefaults }) {
-  const url = joinBaseUrl(requireString(baseUrl, "OpenAI baseUrl"), "chat/completions");
-  const key = requireString(apiKey, "OpenAI apiKey");
-  const m = requireString(model, "OpenAI model");
-  if (!Array.isArray(messages) || !messages.length) throw new Error("OpenAI messages 为空");
-
-  const body = { ...(requestDefaults && typeof requestDefaults === "object" ? requestDefaults : null), model: m, messages, stream: true };
+  const { url, headers, body } = buildOpenAiRequest({ baseUrl, apiKey, model, messages, extraHeaders, requestDefaults, stream: true });
   const resp = await safeFetch(
     url,
     {
       method: "POST",
-      headers: { "content-type": "application/json", ...(extraHeaders || {}), authorization: `Bearer ${key}` },
+      headers,
       body: JSON.stringify(body)
     },
     { timeoutMs, abortSignal, label: "OpenAI(stream)" }
@@ -65,4 +60,3 @@ async function* openAiStreamTextDeltas({ baseUrl, apiKey, model, messages, timeo
 }
 
 module.exports = { openAiCompleteText, openAiStreamTextDeltas };
-

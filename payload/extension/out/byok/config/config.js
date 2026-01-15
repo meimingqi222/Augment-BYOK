@@ -1,7 +1,7 @@
 "use strict";
 
-const { debug, warn } = require("./log");
-const { normalizeEndpoint, normalizeString } = require("./util");
+const { debug, warn } = require("../infra/log");
+const { normalizeEndpoint, normalizeString } = require("../infra/util");
 
 const CONFIG_KEY = "augment-byok.config.v1";
 
@@ -250,5 +250,4 @@ function createConfigManager(opts) {
   return mgr;
 }
 
-module.exports = { CONFIG_KEY, defaultConfig, normalizeConfig, createConfigManager, ConfigManager };
-
+module.exports = { defaultConfig, createConfigManager };
