@@ -13,7 +13,7 @@ const { joinBaseUrl, safeFetch, readTextLimit } = require("../providers/http");
 const { getOfficialConnection } = require("../config/official");
 const { normalizeAugmentChatRequest, buildSystemPrompt, convertOpenAiTools, convertAnthropicTools, buildToolMetaByName, buildOpenAiMessages, buildAnthropicMessages } = require("../core/augment-chat");
 const augmentChatShared = require("../core/augment-chat.shared");
-const { maybeSummarizeAndCompactAugmentChatRequest } = require("../core/augment-history-summary-auto");
+const { maybeSummarizeAndCompactAugmentChatRequest, deleteHistorySummaryCache } = require("../core/augment-history-summary-auto");
 const { REQUEST_NODE_TEXT, REQUEST_NODE_TOOL_RESULT, STOP_REASON_END_TURN, makeBackChatChunk } = require("../core/augment-protocol");
 const { makeEndpointErrorText, guardObjectStream } = require("../core/stream-guard");
 const {
@@ -33,6 +33,24 @@ const OFFICIAL_CODEBASE_RETRIEVAL_TIMEOUT_MS = 12000;
 const OFFICIAL_CONTEXT_CANVAS_TIMEOUT_MS = 4000;
 const CONTEXT_CANVAS_CACHE_TTL_MS = 5 * 60 * 1000;
 const CONTEXT_CANVAS_CACHE = new Map();
+
+async function maybeDeleteHistorySummaryCacheForEndpoint(ep, body) {
+  const endpoint = normalizeEndpoint(ep);
+  if (!endpoint) return false;
+  const lower = endpoint.toLowerCase();
+  if (!lower.includes("delete") && !lower.includes("remove") && !lower.includes("archive")) return false;
+  const b = body && typeof body === "object" && !Array.isArray(body) ? body : null;
+  const conversationId = normalizeString(b?.conversation_id ?? b?.conversationId ?? b?.conversationID);
+  if (!conversationId) return false;
+  try {
+    const ok = await deleteHistorySummaryCache(conversationId);
+    if (ok) debug(`historySummary cache deleted: conv=${conversationId} endpoint=${endpoint}`);
+    return ok;
+  } catch (err) {
+    debug(`historySummary cache delete failed (ignored): ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
 
 function resolveProviderApiKey(provider, label) {
   if (!provider || typeof provider !== "object") throw new Error(`${label} provider 无效`);
@@ -916,6 +934,7 @@ function mergeModels(upstreamJson, byokModelNames, opts) {
 async function maybeHandleCallApi({ endpoint, body, transform, timeoutMs, abortSignal, upstreamApiToken, upstreamCompletionURL }) {
   const ep = normalizeEndpoint(endpoint);
   if (!ep) return undefined;
+  await maybeDeleteHistorySummaryCacheForEndpoint(ep, body);
 
   const cfgMgr = ensureConfigManager();
   const cfg = cfgMgr.get();
@@ -1015,6 +1034,7 @@ async function maybeHandleCallApi({ endpoint, body, transform, timeoutMs, abortS
 async function maybeHandleCallApiStream({ endpoint, body, transform, timeoutMs, abortSignal, upstreamApiToken, upstreamCompletionURL }) {
   const ep = normalizeEndpoint(endpoint);
   if (!ep) return undefined;
+  await maybeDeleteHistorySummaryCacheForEndpoint(ep, body);
 
   const cfgMgr = ensureConfigManager();
   const cfg = cfgMgr.get();

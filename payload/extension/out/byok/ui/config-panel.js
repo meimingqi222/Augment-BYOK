@@ -4,6 +4,7 @@ const { info, warn } = require("../infra/log");
 const { normalizeString } = require("../infra/util");
 const { defaultConfig } = require("../config/config");
 const { setRuntimeEnabled: setRuntimeEnabledPersisted } = require("../config/state");
+const { clearHistorySummaryCacheAll } = require("../core/augment-history-summary-auto");
 const { fetchProviderModels } = require("../providers/models");
 const { renderConfigPanelHtml } = require("./config-panel.html");
 
@@ -87,6 +88,17 @@ function createHandlers({ vscode, ctx, cfgMgr, state, panel }) {
         const m = err instanceof Error ? err.message : String(err);
         warn("panel save failed:", m);
         postStatus(panel, `Save failed: ${m}`);
+      }
+      postRender(panel, cfgMgr, state);
+    },
+    clearHistorySummaryCache: async () => {
+      try {
+        const n = await clearHistorySummaryCacheAll();
+        postStatus(panel, n ? `Cleared history summary cache (${n}).` : "History summary cache already empty.");
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        warn("panel clearHistorySummaryCache failed:", m);
+        postStatus(panel, `Clear history summary cache failed: ${m}`);
       }
       postRender(panel, cfgMgr, state);
     },

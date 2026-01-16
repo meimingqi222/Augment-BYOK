@@ -3,6 +3,7 @@
 const { info, warn } = require("../infra/log");
 const { ensureConfigManager, state, setRuntimeEnabled, CONFIG_SYNC_KEYS, RUNTIME_ENABLED_KEY } = require("../config/state");
 const { openConfigPanel } = require("../ui/config-panel");
+const { clearHistorySummaryCacheAll } = require("../core/augment-history-summary-auto");
 
 function install({ vscode, getActivate, setActivate }) {
   if (state.installed) return;
@@ -89,6 +90,18 @@ function registerCommandsOnce(vscode, ctx, cfgMgr) {
       const m = err instanceof Error ? err.message : String(err);
       warn("openConfigPanel failed:", m);
       try { await vscode.window.showErrorMessage(`Open BYOK Config Panel failed: ${m}`); } catch {}
+    }
+  });
+
+  register("augment-byok.clearHistorySummaryCache", async () => {
+    try {
+      const n = await clearHistorySummaryCacheAll();
+      info(`historySummary cache cleared: ${n}`);
+      try { await vscode.window.showInformationMessage(n ? `Cleared history summary cache (${n})` : "History summary cache already empty"); } catch {}
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      warn("clearHistorySummaryCache failed:", m);
+      try { await vscode.window.showErrorMessage(`Clear history summary cache failed: ${m}`); } catch {}
     }
   });
 }

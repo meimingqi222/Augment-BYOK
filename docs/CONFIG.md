@@ -13,10 +13,12 @@
 
 - 配置：`augment-byok.config.v1`
 - 运行时回滚开关：`augment-byok.runtimeEnabled.v1`
+- 历史摘要缓存：`augment-byok.historySummaryCache.v1`
 
 说明：
 - 这类存储对用户更友好（无需 env / 文件路径），但 **导出 JSON 会包含敏感 Key/Token**，请谨慎分享。
 - 为避免意外把 Key/Token 同步到其它设备，默认只把 `runtimeEnabled` 加入 VS Code Sync（配置请用 Export/Import 迁移）。
+- `historySummaryCache` 会包含对话摘要文本（可能含代码片段/隐私信息），默认不参与 VS Code Sync；如需清理可使用命令 `BYOK: Clear History Summary Cache`。
 
 ## 3) 配置样例（JSON）
 
@@ -57,3 +59,4 @@
 - `BYOK: Open Config Panel`：配置面板（Save/Reset/Export/Import/Enable/Disable）。
 - `BYOK: Reload Config`：从 `globalState` 重新加载（便于排查同步/异常）。
 - `BYOK: Disable (Rollback)`：运行时回滚到官方链路（不改配置）。
+- `BYOK: Clear History Summary Cache`：清空历史摘要缓存（不会影响面板显示的完整历史；仅影响后台滚动摘要复用）。

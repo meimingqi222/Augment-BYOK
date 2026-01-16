@@ -7,6 +7,18 @@
 
   const { qs, normalizeStr, uniq, parseModelsTextarea, parseJsonOrEmptyObject, renderApp } = ns;
 
+  function parseByokModelId(raw) {
+    const s = normalizeStr(raw);
+    if (!s.startsWith("byok:")) return null;
+    const rest = s.slice("byok:".length);
+    const idx = rest.indexOf(":");
+    if (idx <= 0) return null;
+    const providerId = normalizeStr(rest.slice(0, idx));
+    const modelId = normalizeStr(rest.slice(idx + 1));
+    if (!providerId || !modelId) return null;
+    return { providerId, modelId };
+  }
+
   function getPersistedState() {
     try { return vscode && typeof vscode.getState === "function" ? vscode.getState() : null; } catch { return null; }
   }
@@ -180,6 +192,17 @@
 
     cfg.enabled = Boolean(qs("#enabled")?.checked);
 
+    cfg.historySummary = cfg.historySummary && typeof cfg.historySummary === "object" ? cfg.historySummary : {};
+    cfg.historySummary.enabled = Boolean(qs("#historySummaryEnabled")?.checked);
+    cfg.historySummary.providerId = "";
+    cfg.historySummary.model = "";
+    const hsByokModel = normalizeStr(qs("#historySummaryByokModel")?.value);
+    const parsedHsModel = parseByokModelId(hsByokModel);
+    if (parsedHsModel) {
+      cfg.historySummary.providerId = parsedHsModel.providerId;
+      cfg.historySummary.model = parsedHsModel.modelId;
+    }
+
     cfg.timeouts = cfg.timeouts && typeof cfg.timeouts === "object" ? cfg.timeouts : {};
     cfg.timeouts.upstreamMs = Number(qs("#upstreamMs")?.value || 0) || 120000;
 
@@ -345,6 +368,10 @@
     if (action === "save") {
       vscode.postMessage({ type: "save", config: gatherConfigFromDom() });
       return setUiState({ status: "Saving..." }, { preserveEdits: true });
+    }
+    if (action === "clearHistorySummaryCache") {
+      vscode.postMessage({ type: "clearHistorySummaryCache" });
+      return setUiState({ status: "Clearing history summary cache..." }, { preserveEdits: true });
     }
     if (action === "reset") return setUiState({ modal: { kind: "confirmReset" } }, { preserveEdits: true });
     if (action === "reload") {

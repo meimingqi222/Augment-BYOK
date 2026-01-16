@@ -2,6 +2,7 @@
 
 const { normalizeString } = require("../infra/util");
 const shared = require("./augment-chat.shared");
+const { getChatHistoryAndRequestNodesForAPI } = require("./augment-history-summary");
 const {
   REQUEST_NODE_TEXT,
   REQUEST_NODE_TOOL_RESULT,
@@ -128,7 +129,10 @@ function buildAnthropicToolResultsBlocks(nodes) {
 
 function buildAnthropicMessages(req) {
   const messages = [];
-  const history = shared.asArray(req.chat_history);
+
+  const { processedHistory, processedRequestNodes } = getChatHistoryAndRequestNodesForAPI(req);
+  const history = shared.asArray(processedHistory);
+
   for (let i = 0; i < history.length; i++) {
     const h = history[i];
     const reqNodes = [...shared.asArray(h.request_nodes), ...shared.asArray(h.structured_request_nodes), ...shared.asArray(h.nodes)];
@@ -144,7 +148,7 @@ function buildAnthropicMessages(req) {
       if (trBlocks.length) messages.push({ role: "user", content: trBlocks });
     }
   }
-  const currentNodes = [...shared.asArray(req.nodes), ...shared.asArray(req.structured_request_nodes), ...shared.asArray(req.request_nodes)];
+  const currentNodes = shared.asArray(processedRequestNodes);
   const nonToolNodes = currentNodes.filter((n) => shared.normalizeNodeType(n) !== REQUEST_NODE_TOOL_RESULT);
   const extraTextParts = shared.buildUserExtraTextParts(req, { hasNodes: nonToolNodes.length > 0 });
   const userBlocks = buildAnthropicUserContentBlocks(req.message, currentNodes, true);

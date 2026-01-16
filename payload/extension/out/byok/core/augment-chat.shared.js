@@ -2,7 +2,6 @@
 
 const { normalizeString } = require("../infra/util");
 const { RESPONSE_NODE_RAW_RESPONSE, RESPONSE_NODE_MAIN_TEXT_FINISHED, RESPONSE_NODE_TOOL_USE, RESPONSE_NODE_TOOL_USE_START, IMAGE_FORMAT_JPEG, IMAGE_FORMAT_GIF, IMAGE_FORMAT_WEBP } = require("./augment-protocol");
-const { compactAugmentChatHistory } = require("./augment-history-summary");
 const { asRecord, asArray, asString, pick, normalizeNodeType } = require("./augment-struct");
 const {
   personaTypeToLabel,
@@ -109,7 +108,6 @@ function normalizeAugmentChatRequest(body) {
   const message_source = useMessage ? "message" : usePrompt ? "prompt" : normalizeString(rawInstruction) ? "instruction" : "";
   const conversation_id = asString(pick(b, ["conversation_id", "conversationId", "conversationID"]));
   const chat_history = asArray(pick(b, ["chat_history", "chatHistory"])).map(normalizeChatHistoryItem);
-  compactAugmentChatHistory(chat_history);
   const blobs = asRecord(pick(b, ["blobs"]));
   const external_source_ids = asArray(pick(b, ["external_source_ids", "externalSourceIds"]));
   const user_guided_blobs = asArray(pick(b, ["user_guided_blobs", "userGuidedBlobs", "user_specified_files", "userSpecifiedFiles"]));

@@ -2,16 +2,74 @@
 
 const { debug } = require("../infra/log");
 const { normalizeString } = require("../infra/util");
+const { state } = require("../config/state");
 const { openAiCompleteText } = require("../providers/openai");
 const { anthropicCompleteText } = require("../providers/anthropic");
 const { buildSystemPrompt, buildOpenAiMessages, buildAnthropicMessages } = require("./augment-chat");
-const { renderHistorySummaryNodeValue } = require("./augment-history-summary");
 const shared = require("./augment-chat.shared");
 const { buildAbridgedHistoryText, exchangeRequestNodes, exchangeResponseNodes } = require("./augment-history-summary-auto.abridged");
-const { REQUEST_NODE_TEXT, REQUEST_NODE_TOOL_RESULT, REQUEST_NODE_HISTORY_SUMMARY } = require("./augment-protocol");
+const { REQUEST_NODE_TOOL_RESULT, REQUEST_NODE_HISTORY_SUMMARY } = require("./augment-protocol");
 const { asRecord, asArray, asString, pick, normalizeNodeType } = shared;
 
+const HISTORY_SUMMARY_CACHE_KEY = "augment-byok.historySummaryCache.v1";
 const HISTORY_SUMMARY_CACHE = new Map();
+let historySummaryCacheLoaded = false;
+
+function maybeLoadHistorySummaryCacheFromStorage() {
+  if (historySummaryCacheLoaded) return true;
+  const ctx = state && typeof state === "object" ? state.extensionContext : null;
+  if (!ctx || !ctx.globalState || typeof ctx.globalState.get !== "function") return false;
+
+  try {
+    const raw = ctx.globalState.get(HISTORY_SUMMARY_CACHE_KEY);
+    const root = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
+    const entries =
+      (root && root.entries && typeof root.entries === "object" && !Array.isArray(root.entries) ? root.entries : null) ||
+      (root && typeof root === "object" ? root : null) ||
+      null;
+    if (entries) {
+      for (const [cid, v] of Object.entries(entries)) {
+        const convId = normalizeString(cid);
+        const rec = v && typeof v === "object" && !Array.isArray(v) ? v : null;
+        if (!convId || !rec) continue;
+        const summaryText = asString(rec.summaryText ?? rec.summary_text);
+        const summarizedUntilRequestId = asString(rec.summarizedUntilRequestId ?? rec.summarized_until_request_id);
+        const summarizationRequestId = asString(rec.summarizationRequestId ?? rec.summarization_request_id);
+        const updatedAtMs = Number(rec.updatedAtMs ?? rec.updated_at_ms) || 0;
+        if (!summarizedUntilRequestId) continue;
+        HISTORY_SUMMARY_CACHE.set(convId, { summaryText, summarizedUntilRequestId, summarizationRequestId, updatedAtMs });
+      }
+    }
+    historySummaryCacheLoaded = true;
+    debug(`historySummary cache loaded: entries=${HISTORY_SUMMARY_CACHE.size}`);
+    return true;
+  } catch (err) {
+    debug(`historySummary cache load failed (ignored): ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
+async function persistHistorySummaryCacheToStorage() {
+  const ctx = state && typeof state === "object" ? state.extensionContext : null;
+  if (!ctx || !ctx.globalState || typeof ctx.globalState.update !== "function") return false;
+
+  const entries = {};
+  for (const [cid, v] of HISTORY_SUMMARY_CACHE.entries()) {
+    entries[cid] = {
+      summaryText: asString(v?.summaryText),
+      summarizedUntilRequestId: asString(v?.summarizedUntilRequestId),
+      summarizationRequestId: asString(v?.summarizationRequestId),
+      updatedAtMs: Number(v?.updatedAtMs) || 0
+    };
+  }
+  try {
+    await ctx.globalState.update(HISTORY_SUMMARY_CACHE_KEY, { version: 1, entries });
+    return true;
+  } catch (err) {
+    debug(`historySummary cache persist failed (ignored): ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
 
 function nowMs() {
   return Date.now();
@@ -20,6 +78,16 @@ function nowMs() {
 function approxTokenCountFromByteLen(len) {
   const BYTES_PER_TOKEN = 4;
   return Math.ceil(Number(len) / BYTES_PER_TOKEN);
+}
+
+function estimateRequestExtraSizeChars(req) {
+  const r = asRecord(req);
+  return (
+    asString(pick(r, ["prefix"])).length +
+    asString(pick(r, ["selected_code", "selectedCode"])).length +
+    asString(pick(r, ["suffix"])).length +
+    asString(pick(r, ["diff"])).length
+  );
 }
 
 function nodeIsToolResult(n) {
@@ -37,6 +105,12 @@ function historyContainsSummary(history) {
     const it = asRecord(h);
     return hasHistorySummaryNode(it.request_nodes) || hasHistorySummaryNode(it.structured_request_nodes) || hasHistorySummaryNode(it.nodes);
   });
+}
+
+function requestContainsSummary(req) {
+  const r = asRecord(req);
+  const nodes = [...asArray(r.nodes), ...asArray(r.structured_request_nodes), ...asArray(r.request_nodes)];
+  return hasHistorySummaryNode(nodes);
 }
 
 function exchangeHasToolResults(h) {
@@ -144,7 +218,26 @@ function resolveContextWindowTokens(hs, requestedModel) {
     if (model.includes(key)) return Math.floor(v);
   }
   const d = Number(hs?.contextWindowTokensDefault);
-  return Number.isFinite(d) && d > 0 ? Math.floor(d) : null;
+  if (Number.isFinite(d) && d > 0) return Math.floor(d);
+  return inferContextWindowTokensFromModelName(model);
+}
+
+function inferContextWindowTokensFromModelName(model) {
+  const m = normalizeString(model).toLowerCase();
+  if (!m) return null;
+  if (m.includes("gemini-2.5-pro")) return 1000000;
+  if (m.includes("claude-")) return 200000;
+  if (m.includes("gpt-4o")) return 128000;
+  const mk = m.match(/(?:^|[^0-9])([0-9]{1,4})k(?:\\b|[^0-9])/);
+  if (mk && mk[1]) {
+    const n = Number(mk[1]);
+    if (Number.isFinite(n) && n > 0) {
+      if (n === 128) return 128000;
+      if (n === 200) return 200000;
+      return n * 1024;
+    }
+  }
+  return null;
 }
 
 function resolveHistorySummaryConfig(cfg) {
@@ -232,6 +325,7 @@ async function runSummaryModelOnce({ provider, model, prompt, chatHistory, maxTo
 }
 
 function cacheGetFresh(conversationId, boundaryRequestId, now, ttlMs) {
+  maybeLoadHistorySummaryCacheFromStorage();
   const cid = normalizeString(conversationId);
   const bid = normalizeString(boundaryRequestId);
   if (!cid || !bid) return null;
@@ -243,6 +337,7 @@ function cacheGetFresh(conversationId, boundaryRequestId, now, ttlMs) {
 }
 
 function cacheGetFreshState(conversationId, now, ttlMs) {
+  maybeLoadHistorySummaryCacheFromStorage();
   const cid = normalizeString(conversationId);
   if (!cid) return null;
   const e = HISTORY_SUMMARY_CACHE.get(cid);
@@ -251,11 +346,37 @@ function cacheGetFreshState(conversationId, now, ttlMs) {
   return { ...e };
 }
 
-function cachePut(conversationId, boundaryRequestId, summaryText, summarizationRequestId, now) {
+async function cachePut(conversationId, boundaryRequestId, summaryText, summarizationRequestId, now) {
+  maybeLoadHistorySummaryCacheFromStorage();
   const cid = normalizeString(conversationId);
   const bid = normalizeString(boundaryRequestId);
   if (!cid || !bid) return;
-  HISTORY_SUMMARY_CACHE.set(cid, { summaryText: asString(summaryText), summarizedUntilRequestId: bid, summarizationRequestId: asString(summarizationRequestId), updatedAtMs: nowMs() });
+  HISTORY_SUMMARY_CACHE.set(cid, {
+    summaryText: asString(summaryText),
+    summarizedUntilRequestId: bid,
+    summarizationRequestId: asString(summarizationRequestId),
+    updatedAtMs: Number(now) || nowMs()
+  });
+  await persistHistorySummaryCacheToStorage();
+}
+
+async function deleteHistorySummaryCache(conversationId) {
+  maybeLoadHistorySummaryCacheFromStorage();
+  const cid = normalizeString(conversationId);
+  if (!cid) return false;
+  const existed = HISTORY_SUMMARY_CACHE.delete(cid);
+  if (!existed) return false;
+  await persistHistorySummaryCacheToStorage();
+  return true;
+}
+
+async function clearHistorySummaryCacheAll() {
+  maybeLoadHistorySummaryCacheFromStorage();
+  const n = HISTORY_SUMMARY_CACHE.size;
+  if (!n) return 0;
+  HISTORY_SUMMARY_CACHE.clear();
+  await persistHistorySummaryCacheToStorage();
+  return n;
 }
 
 function computeTriggerDecision({ hs, requestedModel, totalWithExtra, convId }) {
@@ -264,7 +385,11 @@ function computeTriggerDecision({ hs, requestedModel, totalWithExtra, convId }) 
   const strategy = normalizeString(hs.triggerStrategy).toLowerCase();
   if (strategy === "chars") return totalWithExtra >= triggerOnHistorySizeChars ? baseDecision : null;
 
-  const cwTokens = resolveContextWindowTokens(hs, requestedModel);
+  const cwTokensRaw = resolveContextWindowTokens(hs, requestedModel);
+  const cwTokens =
+    strategy === "auto" && cwTokensRaw
+      ? Math.min(cwTokensRaw, Math.max(0, Math.floor(triggerOnHistorySizeChars / 4)))
+      : cwTokensRaw;
   if ((strategy === "ratio" || strategy === "auto") && cwTokens) {
     const approxTotalTokens = approxTokenCountFromByteLen(totalWithExtra);
     const ratio = cwTokens ? approxTotalTokens / cwTokens : 0;
@@ -339,7 +464,7 @@ async function resolveSummaryText({ hs, cfg, convId, boundaryRequestId, history,
   const summaryText = normalizeString(await runSummaryModelOnce({ provider, model, prompt, chatHistory: inputHistory, maxTokens: hs.maxTokens, timeoutMs: timeout, abortSignal }));
   if (!summaryText) return null;
   const summarizationRequestId = `byok_history_summary_${now}`;
-  cachePut(convId, boundaryRequestId, summaryText, summarizationRequestId, now);
+  await cachePut(convId, boundaryRequestId, summaryText, summarizationRequestId, now);
   return { summaryText, summarizationRequestId, now };
 }
 
@@ -350,16 +475,16 @@ function buildHistoryEnd(tail) {
   });
 }
 
-function applySummaryToRequest({ hs, req, tail, summaryText, summarizationRequestId, abridged }) {
+function injectHistorySummaryNodeIntoRequestNodes({ hs, req, tail, summaryText, summarizationRequestId, abridged }) {
   const template = asString(hs.summaryNodeRequestMessageTemplate);
   const historyEnd = buildHistoryEnd(tail);
   const summaryNode = { summary_text: summaryText, summarization_request_id: summarizationRequestId, history_beginning_dropped_num_exchanges: abridged.droppedBeginning, history_middle_abridged_text: abridged.text, history_end: historyEnd, message_template: template };
-  const rendered = renderHistorySummaryNodeValue(summaryNode, []);
-  if (!normalizeString(rendered)) return null;
-  const summaryItem = { request_id: "byok_history_summary", request_message: "", response_text: "", request_nodes: [{ id: -10, type: REQUEST_NODE_TEXT, content: "", text_node: { content: rendered } }], structured_request_nodes: [], nodes: [], response_nodes: [], structured_output_nodes: [] };
-  const newHistory = [summaryItem];
-  req.chat_history = newHistory;
-  return newHistory;
+  const node = { id: 0, type: REQUEST_NODE_HISTORY_SUMMARY, content: "", history_summary_node: summaryNode };
+  const r = req && typeof req === "object" ? req : null;
+  if (!r) return null;
+  if (!Array.isArray(r.request_nodes)) r.request_nodes = [];
+  r.request_nodes.push(node);
+  return node;
 }
 
 async function maybeSummarizeAndCompactAugmentChatRequest({ cfg, req, requestedModel, fallbackProvider, fallbackModel, timeoutMs, abortSignal }) {
@@ -370,9 +495,10 @@ async function maybeSummarizeAndCompactAugmentChatRequest({ cfg, req, requestedM
   const history = asArray(req?.chat_history);
   if (!history.length) return false;
   if (historyContainsSummary(history)) return false;
+  if (requestContainsSummary(req)) return false;
 
   const totalChars = estimateHistorySizeChars(history);
-  const totalWithExtra = totalChars + asString(req?.message).length;
+  const totalWithExtra = totalChars + asString(req?.message).length + estimateRequestExtraSizeChars(req);
   const decision = computeTriggerDecision({ hs, requestedModel, totalWithExtra, convId });
   if (!decision) return false;
 
@@ -383,12 +509,11 @@ async function maybeSummarizeAndCompactAugmentChatRequest({ cfg, req, requestedM
   const summary = await resolveSummaryText({ hs, cfg, convId, boundaryRequestId: sel.boundaryRequestId, history, tailStart: sel.tailStart, droppedHead: sel.droppedHead, fallbackProvider, fallbackModel, timeoutMs, abortSignal });
   if (!summary) return false;
 
-  const newHistory = applySummaryToRequest({ hs, req, tail: sel.tail, summaryText: summary.summaryText, summarizationRequestId: summary.summarizationRequestId, abridged });
-  if (!newHistory) return false;
+  const injected = injectHistorySummaryNodeIntoRequestNodes({ hs, req, tail: sel.tail, summaryText: summary.summaryText, summarizationRequestId: summary.summarizationRequestId, abridged });
+  if (!injected) return false;
 
-  const afterChars = estimateHistorySizeChars(newHistory);
-  debug(`historySummary applied: conv=${convId} before≈${totalChars} after≈${afterChars} tailStart=${sel.tailStart}`);
+  debug(`historySummary injected: conv=${convId} before≈${totalChars} tailStart=${sel.tailStart}`);
   return true;
 }
 
-module.exports = { maybeSummarizeAndCompactAugmentChatRequest };
+module.exports = { maybeSummarizeAndCompactAugmentChatRequest, deleteHistorySummaryCache, clearHistorySummaryCacheAll };

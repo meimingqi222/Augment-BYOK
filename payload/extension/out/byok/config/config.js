@@ -40,7 +40,7 @@ function defaultConfig() {
       contextWindowTokensOverrides: {},
       historyTailSizeCharsToExclude: 250000,
       minTailExchanges: 2,
-      cacheTtlMs: 1800000,
+      cacheTtlMs: 0,
       maxSummarizationInputChars: 250000,
       prompt: "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.\n\nInclude:\n- Current progress and key decisions made\n- Important context, constraints, or user preferences\n- What remains to be done (clear next steps)\n- Any critical data, examples, or references needed to continue\n\nBe concise, structured, and focused on helping the next LLM seamlessly continue the work.",
       rollingSummary: true,
@@ -204,12 +204,13 @@ function normalizeConfig(raw) {
     if (normalizeString(prompt)) hs.prompt = prompt;
     const rollingSummary = get(historySummary, ["rolling_summary", "rollingSummary"]);
     if (typeof rollingSummary === "boolean") hs.rollingSummary = rollingSummary;
-    const templateNew = typeof get(historySummary, ["summary_node_request_message_template_new", "summaryNodeRequestMessageTemplateNew"]) === "string" ? get(historySummary, ["summary_node_request_message_template_new", "summaryNodeRequestMessageTemplateNew"]) : "";
-    const templateOld = typeof get(historySummary, ["summary_node_request_message_template", "summaryNodeRequestMessageTemplate"]) === "string" ? get(historySummary, ["summary_node_request_message_template", "summaryNodeRequestMessageTemplate"]) : "";
-    const template = normalizeString(templateNew) ? templateNew : templateOld;
+    const template =
+      typeof get(historySummary, ["summary_node_request_message_template", "summaryNodeRequestMessageTemplate"]) === "string"
+        ? get(historySummary, ["summary_node_request_message_template", "summaryNodeRequestMessageTemplate"])
+        : "";
     if (normalizeString(template)) {
       if (!isValidHistorySummaryTemplateNewMode(template)) {
-        warn("historySummary.summaryNodeRequestMessageTemplate 无效（新模式要求包含 {summary}/{summarization_request_id}/{beginning_part_dropped_num_exchanges}/{middle_part_abridged}/{end_part_full}），将使用默认模板");
+        warn("historySummary.summaryNodeRequestMessageTemplate 无效（要求包含 {summary}/{summarization_request_id}/{beginning_part_dropped_num_exchanges}/{middle_part_abridged}/{end_part_full}），将使用默认模板");
       } else {
         hs.summaryNodeRequestMessageTemplate = template;
       }

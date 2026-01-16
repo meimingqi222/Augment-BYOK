@@ -409,6 +409,61 @@
       </div>
     `;
 
+    const historySummary = c.historySummary && typeof c.historySummary === "object" ? c.historySummary : {};
+    const hsEnabled = historySummary.enabled === true;
+    const hsProviderId = normalizeStr(historySummary.providerId);
+    const hsModel = normalizeStr(historySummary.model);
+    const hsByokModel = hsProviderId && hsModel ? `byok:${hsProviderId}:${hsModel}` : "";
+    const hsModelGroups = providers
+      .map((p) => {
+        const pid = normalizeStr(p?.id);
+        const dm = normalizeStr(p?.defaultModel);
+        const rawModels = Array.isArray(p?.models) ? p.models : [];
+        const models = uniq(rawModels.map((m) => normalizeStr(m)).filter(Boolean).concat(dm ? [dm] : [])).sort((a, b) => a.localeCompare(b));
+        return { pid, models };
+      })
+      .filter((g) => g && g.pid && Array.isArray(g.models) && g.models.length)
+      .sort((a, b) => a.pid.localeCompare(b.pid));
+    const historySummaryHtml = `
+      <div class="card">
+        <div class="title">History Summary（上下文压缩）</div>
+        <div class="hint">
+          启用后会在后台自动做“滚动摘要”，用于避免上下文溢出；面板/聊天 UI 仍显示完整历史（压缩仅用于发给上游模型）。
+          高级参数使用默认值（如需可 Export 后在 JSON 里调整）。
+        </div>
+        <div class="grid">
+          <div>historySummary.enabled</div>
+          <div class="row">
+            <input type="checkbox" id="historySummaryEnabled" ${hsEnabled ? "checked" : ""} />
+            <span class="small">启用</span>
+          </div>
+          <div>historySummary.model</div>
+          <div>
+            <select id="historySummaryByokModel">
+              ${optionHtml({ value: "", label: "(follow current request)", selected: !hsByokModel })}
+              ${hsModelGroups
+                .map((g) => {
+                  const options = g.models
+                    .map((m) => {
+                      const v = `byok:${g.pid}:${m}`;
+                      return optionHtml({ value: v, label: m, selected: v === hsByokModel });
+                    })
+                    .join("");
+                  return `<optgroup label="${escapeHtml(g.pid)}">${options}</optgroup>`;
+                })
+                .join("")}
+            </select>
+            <div class="small">留空则跟随当前对话模型；选择项来自 providers[].models。</div>
+          </div>
+          <div>cache</div>
+          <div class="row">
+            <button class="btn" data-action="clearHistorySummaryCache">Clear Summary Cache</button>
+            <span class="small">仅清理后台摘要复用缓存，不影响 UI 历史显示。</span>
+          </div>
+        </div>
+      </div>
+    `;
+
     const providerMap = computeProviderIndexById(c);
     const llmGroup = ENDPOINT_GROUPS_V1.find((g) => g && g.id === "llm_data_plane");
     const byokSupportedSet = new Set(Array.isArray(llmGroup?.endpoints) ? llmGroup.endpoints : []);
@@ -578,6 +633,7 @@
           ${general}
           ${official}
           ${providersHtml}
+          ${historySummaryHtml}
           ${endpointRules}
         </div>
         <div class="side" id="side">${ns.summarizeSummaryBox(summary)}</div>

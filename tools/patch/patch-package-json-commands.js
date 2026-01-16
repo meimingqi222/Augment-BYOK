@@ -10,7 +10,8 @@ const COMMANDS = [
   { command: "augment-byok.enable", title: "BYOK: Enable" },
   { command: "augment-byok.disable", title: "BYOK: Disable (Rollback)" },
   { command: "augment-byok.reloadConfig", title: "BYOK: Reload Config" },
-  { command: "augment-byok.openConfigPanel", title: "BYOK: Open Config Panel" }
+  { command: "augment-byok.openConfigPanel", title: "BYOK: Open Config Panel" },
+  { command: "augment-byok.clearHistorySummaryCache", title: "BYOK: Clear History Summary Cache" }
 ];
 
 function stripAdvancedSettings(contributes) {

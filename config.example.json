@@ -57,5 +57,10 @@
       "/resolve-instruction": { "mode": "disabled" }
     }
   },
+  "historySummary": {
+    "enabled": false,
+    "providerId": "",
+    "model": ""
+  },
   "timeouts": { "upstreamMs": 120000 }
 }

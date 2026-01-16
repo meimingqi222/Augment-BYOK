@@ -2,6 +2,7 @@
 
 const { normalizeString } = require("../infra/util");
 const shared = require("./augment-chat.shared");
+const { getChatHistoryAndRequestNodesForAPI } = require("./augment-history-summary");
 const {
   REQUEST_NODE_TEXT,
   REQUEST_NODE_TOOL_RESULT,
@@ -133,7 +134,10 @@ function buildOpenAiMessages(req) {
   const system = shared.buildSystemPrompt(req);
   const messages = [];
   if (normalizeString(system)) messages.push({ role: "system", content: system.trim() });
-  const history = shared.asArray(req.chat_history);
+
+  const { processedHistory, processedRequestNodes } = getChatHistoryAndRequestNodesForAPI(req);
+  const history = shared.asArray(processedHistory);
+
   for (let i = 0; i < history.length; i++) {
     const h = history[i];
     const reqNodes = [...shared.asArray(h.request_nodes), ...shared.asArray(h.structured_request_nodes), ...shared.asArray(h.nodes)];
@@ -146,7 +150,7 @@ function buildOpenAiMessages(req) {
     const next = i + 1 < history.length ? history[i + 1] : null;
     if (next) messages.push(...buildOpenAiToolMessagesFromRequestNodes([...shared.asArray(next.request_nodes), ...shared.asArray(next.structured_request_nodes), ...shared.asArray(next.nodes)]));
   }
-  const currentNodesAll = [...shared.asArray(req.nodes), ...shared.asArray(req.structured_request_nodes), ...shared.asArray(req.request_nodes)];
+  const currentNodesAll = shared.asArray(processedRequestNodes);
   messages.push(...buildOpenAiToolMessagesFromRequestNodes(currentNodesAll));
   const currentNodes = currentNodesAll.filter((n) => shared.normalizeNodeType(n) !== REQUEST_NODE_TOOL_RESULT);
   const extraTextParts = shared.buildUserExtraTextParts(req, { hasNodes: currentNodes.length > 0 });

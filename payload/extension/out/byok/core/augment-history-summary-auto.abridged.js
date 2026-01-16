@@ -142,7 +142,12 @@ function buildAbridgedEntries(history) {
     if (!current) continue;
     const toolUses = iterResponseToolUses(h);
     for (const tu of toolUses) addToolUseToActions(tu, current.agent_actions_summary);
-    if (!toolUses.length && shared.asString(h.response_text).trim()) current.agent_final_response = shared.asString(h.response_text);
+    if (!toolUses.length) {
+      const respText = shared.asString(h.response_text).trim();
+      const respFromNodes = shared.extractAssistantTextFromOutputNodes(exchangeResponseNodes(h));
+      const finalText = respText || respFromNodes;
+      if (finalText.trim()) current.agent_final_response = finalText;
+    }
   }
   if (current) { if (!shared.asString(current.agent_final_response).trim()) current.continues = true; out.push(current); }
   for (const e of out) finalizeActions(e.agent_actions_summary);
@@ -173,4 +178,3 @@ function buildAbridgedHistoryText(history, params, untilRequestId) {
 }
 
 module.exports = { buildAbridgedHistoryText, exchangeRequestNodes, exchangeResponseNodes };
-
